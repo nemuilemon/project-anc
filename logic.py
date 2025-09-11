@@ -54,42 +54,22 @@ class AppLogic:
             return None
 
     def save_file(self, path, content):
+        """ファイル保存と、DBレコードの更新/作成を行う"""
         try:
             with open(path, "w", encoding="utf-8") as f:
                 f.write(content)
 
             File = Query()
             title = os.path.basename(path)
-            # upsertを使って、存在しなければtags:[]で新規作成、存在すれば何もしない
+            
+            # 既存のドキュメントを取得
+            doc = self.db.get(File.path == path)
+            # 既存のタグがあればそれを使い、なければ空のリストを使う
+            existing_tags = doc.get('tags', []) if doc else []
+            
+            # upsertを使って、ドキュメントを更新または新規作成する
             self.db.upsert(
-                {'title': title, 'path': path, 'tags': self.db.get(File.path == path).get('tags', [])},
-                File.path == path
-            )
-            return True, title
-        except Exception as e:
-            print(f"Error saving file: {e}")
-            return False, None
-
-
-    def read_file(self, path):
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                return f.read()
-        except Exception as e:
-            print(f"Error reading file: {e}")
-            return None
-
-    def save_file(self, path, content):
-        """ファイル保存と、タグなしでのDB初期登録を行う"""
-        try:
-            with open(path, "w", encoding="utf-8") as f:
-                f.write(content)
-
-            File = Query()
-            title = os.path.basename(path)
-            # upsertを使って、存在しなければtags:[]で新規作成、存在すれば何もしない
-            self.db.upsert(
-                {'title': title, 'path': path, 'tags': self.db.get(File.path == path).get('tags', [])},
+                {'title': title, 'path': path, 'tags': existing_tags},
                 File.path == path
             )
             return True, title

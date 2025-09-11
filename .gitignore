@@ -14,3 +14,7 @@ anc_db.json
 
 # test
 cleanup.py
+
+# agent
+agent.md
+log.md
