@@ -7,41 +7,72 @@ from ui import AppUI
 from logic import AppLogic
 
 def main(page: ft.Page):
-    # --- 1. 初期設定 ---
     page.title = "Project A.N.C. (Alice Nexus Core)"
     if not os.path.exists(config.NOTES_DIR):
         os.makedirs(config.NOTES_DIR)
     db = TinyDB(config.DB_FILE)
 
-    # --- 2. 各担当のインスタンスを作成 ---
     app_logic = AppLogic(db)
 
-    # --- 3. 指揮者としての処理を定義 ---
-    def handle_open_file(filename: str):
-        path = os.path.join(config.NOTES_DIR, filename)
+    def handle_open_file(path: str):
         content = app_logic.read_file(path)
         if content is not None:
-            app_ui.add_or_focus_tab(filename, content)
+            app_ui.add_or_focus_tab(path, content)
 
     def handle_save_file(path: str, content: str):
-        # NOTE: pathは現在filenameと同じだが将来的にはフルパスになる
-        full_path = os.path.join(config.NOTES_DIR, path)
-        success, title = app_logic.save_file(full_path, content)
+        success, title = app_logic.save_file(path, content)
         if success:
             page.snack_bar = ft.SnackBar(content=ft.Text(f"『{title}』を保存しました。"))
             page.snack_bar.open = True
+            # 保存時にもファイルリストを更新する
+            all_files = app_logic.get_file_list()
+            app_ui.update_file_list(all_files)
             page.update()
 
-    # --- 4. UIに指揮者の処理を渡してインスタンスを作成 ---
-    app_ui = AppUI(page,on_open_file=handle_open_file, on_save_file=handle_save_file)
-    page.appbar = app_ui.appbar # appbarをページに設定
+    # handle_analyze_tags関数を新しく追加
+    def handle_analyze_tags(path: str, content: str):
+        """タグ分析の命令を処理する"""
+        if not path:
+            page.snack_bar = ft.SnackBar(content=ft.Text("先にファイルを一度保存してください。"))
+            page.snack_bar.open = True
+            page.update()
+            return
+            
+        # 分析中の表示
+        page.snack_bar = ft.SnackBar(content=ft.Text("AIが分析中です..."))
+        page.snack_bar.open = True
+        page.update()
+        
+        success, message = app_logic.analyze_and_update_tags(path, content)
+        
+        page.snack_bar = ft.SnackBar(content=ft.Text(message))
+        page.snack_bar.open = True
+        
+        if success:
+            # 成功したらファイルリストを更新してタグを反映
+            all_files = app_logic.get_file_list()
+            app_ui.update_file_list(all_files)
+        
+        page.update()
 
-    # --- 5. アプリケーションの実行 ---
+
+    def handle_search(keyword: str):
+        searched_files = app_logic.search_files(keyword)
+        app_ui.update_file_list(searched_files)
+
+    # AppUIの呼び出しを更新
+    app_ui = AppUI(
+        page,
+        on_open_file=handle_open_file, 
+        on_save_file=handle_save_file,
+        on_search=handle_search,
+        on_analyze_tags=handle_analyze_tags # 新しいハンドラを渡す
+    )
+    page.appbar = app_ui.appbar
+
     page.add(app_ui.build())
 
-    # 初回のファイルリストを読み込んでUIに反映
     initial_files = app_logic.get_file_list()
     app_ui.update_file_list(initial_files)
-
 
 ft.app(target=main)

@@ -11,3 +11,6 @@ test.md
 
 # local database
 anc_db.json
+
+# test
+cleanup.py
