@@ -5,3 +5,9 @@ __pycache__/
 
 # macOS System Files
 .DS_Store
+
+# files for test
+test.md
+
+# local database
+anc_db.json
