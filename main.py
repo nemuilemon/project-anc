@@ -1,70 +1,47 @@
+# main.py
 import flet as ft
-import os # osライブラリをインポート
+import os
 from tinydb import TinyDB
-
+import config
+from ui import AppUI
+from logic import AppLogic
 
 def main(page: ft.Page):
+    # --- 1. 初期設定 ---
     page.title = "Project A.N.C. (Alice Nexus Core)"
+    if not os.path.exists(config.NOTES_DIR):
+        os.makedirs(config.NOTES_DIR)
+    db = TinyDB(config.DB_FILE)
 
-    db = TinyDB('anc_db.json') # DBを初期化
-    
-    # アプリ起動時に読み込むファイルの内容を準備
-    initial_content = ""
-    file_path = "test.md"
-    
-    # ファイルが存在するか確認して、あれば内容を読み込む
-    if os.path.exists(file_path):
-        with open(file_path, "r", encoding="utf-8") as f:
-            initial_content = f.read()
+    # --- 2. 各担当のインスタンスを作成 ---
+    app_logic = AppLogic(db)
 
-    # テキストエディタ本体を定義（valueに読み込んだ内容を設定）
-    editor = ft.TextField(
-        multiline=True,
-        expand=True,
-        hint_text="ここにメモを書いてね...",
-        value=initial_content # ここがポイント！
-    )
+    # --- 3. 指揮者としての処理を定義 ---
+    def handle_open_file(filename: str):
+        path = os.path.join(config.NOTES_DIR, filename)
+        content = app_logic.read_file(path)
+        if content is not None:
+            app_ui.add_or_focus_tab(filename, content)
 
-    # 保存ボタンが押された時の処理
-    def save_file(e):
-        with open(file_path, "w", encoding="utf-8") as f:
-            f.write(editor.value)
-        
-        page.snack_bar = ft.SnackBar(content=ft.Text(f"保存しました！ ({file_path})"))
-        page.snack_bar.open = True
-        page.update()
+    def handle_save_file(path: str, content: str):
+        # NOTE: pathは現在filenameと同じだが将来的にはフルパスになる
+        full_path = os.path.join(config.NOTES_DIR, path)
+        success, title = app_logic.save_file(full_path, content)
+        if success:
+            page.snack_bar = ft.SnackBar(content=ft.Text(f"『{title}』を保存しました。"))
+            page.snack_bar.open = True
+            page.update()
 
-    # アプリの上部バー（AppBar）を設定
-    page.appbar = ft.AppBar(
-        title=ft.Text("Untitled Note"),
-        actions=[
-            ft.IconButton(ft.Icons.SAVE, on_click=save_file),
-        ]
-    )
+    # --- 4. UIに指揮者の処理を渡してインスタンスを作成 ---
+    app_ui = AppUI(page,on_open_file=handle_open_file, on_save_file=handle_save_file)
+    page.appbar = app_ui.appbar # appbarをページに設定
 
-    # サイドバー
-    sidebar = ft.NavigationRail(
-        selected_index=0,
-        label_type=ft.NavigationRailLabelType.ALL,
-        destinations=[
-            ft.NavigationRailDestination(
-                icon=ft.Icons.EDIT_NOTE,
-                label="Files"
-            ),
-        ]
-    )
-    
-    # メインビュー
-    main_view = ft.Row(
-        controls=[
-            sidebar,
-            ft.VerticalDivider(width=1),
-            editor,
-        ],
-        expand=True,
-    )
+    # --- 5. アプリケーションの実行 ---
+    page.add(app_ui.build())
 
-    page.add(main_view)
-    page.update()
+    # 初回のファイルリストを読み込んでUIに反映
+    initial_files = app_logic.get_file_list()
+    app_ui.update_file_list(initial_files)
+
 
 ft.app(target=main)
