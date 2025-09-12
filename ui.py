@@ -186,15 +186,8 @@ class AppUI:
             ]
         )
         
-        # Test button in sidebar as well
-        test_new_file_btn = ft.ElevatedButton(
-            "New File (Test)", 
-            icon=ft.Icons.ADD,
-            on_click=self.new_file_button_clicked
-        )
-        
         self.sidebar = ft.Container(
-            content=ft.Column([test_new_file_btn, self.file_list]),
+            content=ft.Column([self.file_list]),
             width=250, padding=10, bgcolor=ft.Colors.BLACK12
         )
 
@@ -229,41 +222,66 @@ class AppUI:
             self.on_save_file(path, content)
 
     def handle_rename_intent(self, file_info):
-        """Receives the intent to rename a file and shows the dialog."""
+        """Receives the intent to rename a file and shows a custom modal dialog."""
+        
         new_name_field = ft.TextField(
             label="New file name",
             value=file_info['title'],
             autofocus=True,
+            expand=True
         )
 
-        def close_dialog(e):
-            self.page.dialog.open = False
-            self.page.update()
+        def close_rename_dialog(e=None):
+            # Remove the overlay
+            if hasattr(self, 'rename_dialog_overlay') and self.rename_dialog_overlay in self.page.overlay:
+                self.page.overlay.remove(self.rename_dialog_overlay)
+                self.page.update()
 
-        def perform_rename(e):
+        def perform_rename_action(e):
             new_name = new_name_field.value.strip()
             if new_name:
+                close_rename_dialog()
                 self.on_rename_file(file_info['path'], new_name)
-            close_dialog(e)
+            else:
+                # Show error message
+                self.page.snack_bar = ft.SnackBar(content=ft.Text("Please enter a filename"))
+                self.page.snack_bar.open = True
+                self.page.update()
 
-        rename_dialog = ft.AlertDialog(
-            modal=True,
-            title=ft.Text("Rename File"),
-            content=new_name_field,
-            actions=[
-                ft.TextButton("Cancel", on_click=close_dialog),
-                ft.FilledButton("Rename", on_click=perform_rename),
-            ],
-            actions_alignment=ft.MainAxisAlignment.END,
+        # Create custom modal dialog using Container overlay
+        self.rename_dialog_overlay = ft.Container(
+            content=ft.Container(
+                content=ft.Column([
+                    ft.Text("Rename File", size=20, weight=ft.FontWeight.BOLD),
+                    ft.Divider(height=20),
+                    new_name_field,
+                    ft.Row([
+                        ft.TextButton("Cancel", on_click=close_rename_dialog),
+                        ft.FilledButton("Rename", on_click=perform_rename_action),
+                    ], alignment=ft.MainAxisAlignment.END, spacing=10)
+                ], spacing=15, tight=True),
+                padding=ft.padding.all(20),
+                bgcolor=ft.Colors.WHITE,
+                border_radius=10,
+                shadow=ft.BoxShadow(
+                    spread_radius=1,
+                    blur_radius=15,
+                    color=ft.Colors.BLACK26,
+                    offset=ft.Offset(0, 4),
+                ),
+                width=400,
+            ),
+            alignment=ft.alignment.center,
+            bgcolor=ft.Colors.BLACK54,  # Semi-transparent background
+            expand=True,
+            on_click=close_rename_dialog  # Close when clicking outside
         )
-
-        self.page.dialog = rename_dialog
-        self.page.dialog.open = True
+        
+        self.page.overlay.append(self.rename_dialog_overlay)
         self.page.update()
 
     def new_file_button_clicked(self, e):
         """Shows a custom modal dialog to get a filename for the new file."""
-        print("New file button clicked - creating custom modal")  # Debug
         
         filename_field = ft.TextField(
             label="File name",
@@ -273,15 +291,13 @@ class AppUI:
         )
 
         def close_custom_dialog(e=None):
-            print("Closing custom dialog")  # Debug
-            # Remove the overlay - page.overlay is a list, not an object with .controls
+            # Remove the overlay
             if hasattr(self, 'dialog_overlay') and self.dialog_overlay in self.page.overlay:
                 self.page.overlay.remove(self.dialog_overlay)
                 self.page.update()
 
         def create_file_action(e):
             filename = filename_field.value.strip()
-            print(f"Create file action: filename='{filename}'")  # Debug
             if filename:
                 close_custom_dialog()
                 self.on_create_file(filename)
@@ -320,10 +336,8 @@ class AppUI:
             on_click=close_custom_dialog  # Close when clicking outside
         )
         
-        print("Adding custom dialog to overlay")  # Debug
         self.page.overlay.append(self.dialog_overlay)
         self.page.update()
-        print("Custom dialog should be visible")  # Debug
 
     def update_file_list(self, files_info):
         self.file_list.controls.clear()
