@@ -20,8 +20,9 @@ class FileListItem(ft.ListTile):
         on_rename_intent: ファイル名変更時のコールバック
         on_archive_intent: アーカイブ操作時のコールバック
         on_move_file: ファイル移動操作時のコールバック
+        on_delete_intent: ファイル削除時のコールバック
     """
-    def __init__(self, file_info, on_update_tags, on_open_file, on_rename_intent, on_archive_intent, on_move_file):
+    def __init__(self, file_info, on_update_tags, on_open_file, on_rename_intent, on_archive_intent, on_move_file, on_delete_intent):
         super().__init__()
 
         self.file_info = file_info
@@ -30,6 +31,7 @@ class FileListItem(ft.ListTile):
         self.on_rename_intent = on_rename_intent
         self.on_archive_intent = on_archive_intent
         self.on_move_file = on_move_file
+        self.on_delete_intent = on_delete_intent
         self.editing = False
 
         # --- Define all controls that will be used/swapped ---
@@ -87,6 +89,12 @@ class FileListItem(ft.ListTile):
                 text="Move to bottom", 
                 icon=ft.Icons.KEYBOARD_ARROW_DOWN,
                 on_click=self.move_to_bottom_clicked
+            ),
+            ft.PopupMenuItem(),  # Separator
+            ft.PopupMenuItem(
+                text="Delete file",
+                icon=ft.Icons.DELETE,
+                on_click=self.delete_intent_clicked
             )
         ])
         
@@ -142,6 +150,9 @@ class FileListItem(ft.ListTile):
     
     def move_to_bottom_clicked(self, e):
         self.on_move_file('bottom', self.file_info)
+    
+    def delete_intent_clicked(self, e):
+        self.on_delete_intent(self.file_info)
 
     def rename_clicked(self, e):
         """Shows a dialog to get a new file name."""
@@ -219,7 +230,7 @@ class AppUI:
     Callbacks:
         各操作に対応するコールバック関数群（on_open_file, on_save_file等）
     """
-    def __init__(self, page: ft.Page, on_open_file, on_save_file, on_analyze_tags, on_refresh_files, on_update_tags, on_cancel_tags, on_rename_file, on_close_tab, on_create_file, on_archive_file, on_update_order):
+    def __init__(self, page: ft.Page, on_open_file, on_save_file, on_analyze_tags, on_refresh_files, on_update_tags, on_cancel_tags, on_rename_file, on_close_tab, on_create_file, on_archive_file, on_update_order, on_delete_file):
         self.page = page
         self.on_open_file = on_open_file
         self.on_save_file = on_save_file
@@ -232,6 +243,7 @@ class AppUI:
         self.on_create_file = on_create_file
         self.on_archive_file = on_archive_file
         self.on_update_order = on_update_order
+        self.on_delete_file = on_delete_file
         
         self.tabs = ft.Tabs(selected_index=0, expand=True, tabs=[])
         # ファイルリスト用のコンテナ
@@ -257,6 +269,22 @@ class AppUI:
             visible=False # 最初は隠しておく
         )
         self.progress_ring = ft.ProgressRing(visible=False) # 最初は隠しておく
+        
+        # Progress indicators for various operations
+        self.file_progress_bar = ft.ProgressBar(
+            value=0,
+            visible=False,
+            width=200,
+            height=4,
+            bgcolor=ft.Colors.GREY_300,
+            color=ft.Colors.BLUE
+        )
+        self.operation_status_text = ft.Text(
+            "",
+            size=12,
+            color=ft.Colors.GREY_600,
+            visible=False
+        )
 
         # Create new file button separately for testing
         self.new_file_button = ft.IconButton(
@@ -275,6 +303,11 @@ class AppUI:
                     on_click=lambda e: self.on_refresh_files()
                 ),
                 ft.ElevatedButton("Save", icon=ft.Icons.SAVE, on_click=self.save_button_clicked),
+                # Progress indicators section
+                ft.Column([
+                    self.operation_status_text,
+                    self.file_progress_bar
+                ], spacing=2, tight=True),
                 self.progress_ring,
                 self.analyze_button,
                 self.cancel_button
@@ -303,6 +336,51 @@ class AppUI:
         self.analyze_button.visible = True
         self.progress_ring.visible = False
         self.cancel_button.visible = False
+        self.hide_progress_indicators()
+        self.page.update()
+    
+    def show_progress_indicators(self, status_text: str = "Processing...", show_progress_bar: bool = True):
+        """進捗インジケーターを表示する"""
+        self.operation_status_text.value = status_text
+        self.operation_status_text.visible = True
+        
+        if show_progress_bar:
+            self.file_progress_bar.value = 0
+            self.file_progress_bar.visible = True
+        
+        self.page.update()
+    
+    def update_progress(self, progress: int, status_text: str = None):
+        """進捗を更新する（0-100の範囲）"""
+        if self.file_progress_bar.visible:
+            self.file_progress_bar.value = progress / 100
+        
+        if status_text:
+            self.operation_status_text.value = status_text
+        
+        self.page.update()
+    
+    def hide_progress_indicators(self):
+        """進捗インジケーターを非表示にする"""
+        self.operation_status_text.visible = False
+        self.file_progress_bar.visible = False
+        self.file_progress_bar.value = 0
+        self.page.update()
+    
+    def show_loading_state(self, message: str = "Loading...", show_spinner: bool = True):
+        """ローディング状態を表示する"""
+        self.operation_status_text.value = message
+        self.operation_status_text.visible = True
+        
+        if show_spinner:
+            self.progress_ring.visible = True
+        
+        self.page.update()
+    
+    def hide_loading_state(self):
+        """ローディング状態を非表示にする"""
+        self.operation_status_text.visible = False
+        self.progress_ring.visible = False
         self.page.update()
 
         
@@ -401,6 +479,73 @@ class AppUI:
     def handle_archive_intent(self, file_info):
         """アーカイブ操作の意図を受け取り処理する"""
         self.on_archive_file(file_info['path'])
+    
+    def handle_delete_intent(self, file_info):
+        """ファイル削除の意図を受け取り、確認ダイアログを表示する"""
+        
+        filename = file_info['title']
+        
+        def close_delete_dialog(e=None):
+            # Remove the overlay
+            if hasattr(self, 'delete_dialog_overlay') and self.delete_dialog_overlay in self.page.overlay:
+                self.page.overlay.remove(self.delete_dialog_overlay)
+                self.page.update()
+
+        def confirm_delete_action(e):
+            close_delete_dialog()
+            self.on_delete_file(file_info['path'])
+
+        # Create warning dialog with custom styling
+        self.delete_dialog_overlay = ft.Container(
+            content=ft.Container(
+                content=ft.Column([
+                    ft.Row([
+                        ft.Icon(ft.Icons.WARNING, color=ft.Colors.RED, size=32),
+                        ft.Text("Delete File", size=20, weight=ft.FontWeight.BOLD, color=ft.Colors.RED)
+                    ], spacing=10),
+                    ft.Divider(height=20),
+                    ft.Text(
+                        f"Are you sure you want to permanently delete '{filename}'?",
+                        size=16,
+                        text_align=ft.TextAlign.CENTER
+                    ),
+                    ft.Text(
+                        "This action cannot be undone.",
+                        size=14,
+                        color=ft.Colors.GREY_600,
+                        text_align=ft.TextAlign.CENTER
+                    ),
+                    ft.Row([
+                        ft.TextButton("Cancel", on_click=close_delete_dialog),
+                        ft.FilledButton(
+                            "Delete", 
+                            on_click=confirm_delete_action,
+                            style=ft.ButtonStyle(
+                                bgcolor=ft.Colors.RED,
+                                color=ft.Colors.WHITE
+                            )
+                        ),
+                    ], alignment=ft.MainAxisAlignment.END, spacing=10)
+                ], spacing=15, tight=True),
+                padding=ft.padding.all(20),
+                bgcolor=ft.Colors.WHITE,
+                border_radius=10,
+                shadow=ft.BoxShadow(
+                    spread_radius=1,
+                    blur_radius=15,
+                    color=ft.Colors.BLACK26,
+                    offset=ft.Offset(0, 4),
+                ),
+                width=450,
+            ),
+            alignment=ft.alignment.center,
+            bgcolor=ft.Colors.BLACK54,  # Semi-transparent background
+            expand=True,
+            on_click=close_delete_dialog  # Close when clicking outside
+        )
+        
+        self.page.overlay.append(self.delete_dialog_overlay)
+        self.page.update()
     
     def handle_move_file(self, direction, file_info):
         """ファイルの移動操作を処理する"""
@@ -529,7 +674,8 @@ class AppUI:
                     on_open_file=self.on_open_file,
                     on_rename_intent=self.handle_rename_intent,
                     on_archive_intent=self.handle_archive_intent,
-                    on_move_file=self.handle_move_file
+                    on_move_file=self.handle_move_file,
+                    on_delete_intent=self.handle_delete_intent
                 )
                 
                 # アーカイブされたファイルの視覚的区別

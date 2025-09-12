@@ -4,6 +4,7 @@ from tinydb import Query
 import config
 import ollama
 from security import sanitize_filename, validate_file_path, safe_file_operation, create_safe_directory, SecurityError
+from async_operations import async_manager, ProgressTracker, run_with_progress
 
 class AppLogic:
     def __init__(self, db):
@@ -610,6 +611,234 @@ class AppLogic:
         except Exception as e:
             print(f"Error updating file order: {e}")
             return False, "ファイル順番の更新中にエラーが発生しました。"
+
+    def delete_file(self, file_path):
+        """ファイルを完全に削除し、データベースからもレコードを削除する。
+        
+        Args:
+            file_path (str): 削除対象ファイルの絶対パス
+        
+        Returns:
+            tuple: (成功フラグ, メッセージ)
+                - bool: 削除が成功した場合True
+                - str: 結果メッセージ（成功/失敗理由）
+        
+        Note:
+            セキュリティ検証を行い、ファイルシステムとデータベースの両方から
+            安全に削除する。バックアップは作成されないため、操作は不可逆的。
+        """
+        # Transaction state tracking
+        file_deleted = False
+        db_updated = False
+        backup_content = None
+        
+        try:
+            # 1. セキュリティ検証
+            success, message, validated_path = validate_file_path(file_path, self.allowed_dirs)
+            if not success:
+                return False, f"セキュリティ検証失敗: {message}"
+            
+            file_path = validated_path
+            filename = os.path.basename(file_path)
+            
+            # 2. ファイル存在確認
+            if not os.path.exists(file_path):
+                return False, "削除対象のファイルが見つかりません。"
+            
+            # 3. データベースレコード存在確認
+            File = Query()
+            existing_record = self.db.get(File.path == file_path)
+            if not existing_record:
+                return False, "データベースにファイル記録が見つかりません。"
+            
+            # 4. バックアップ作成（エラー時のロールバック用）
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    backup_content = f.read()
+            except Exception as e:
+                print(f"Warning: Could not create backup for {filename}: {e}")
+            
+            # 5. データベースからレコードを削除
+            try:
+                removed_count = self.db.remove(File.path == file_path)
+                if removed_count == 0:
+                    return False, "データベースからのファイル削除に失敗しました。"
+                
+                db_updated = True
+                
+            except Exception as db_error:
+                print(f"Database deletion failed: {db_error}")
+                return False, "データベース操作中にエラーが発生しました。"
+            
+            # 6. ファイルシステムからファイルを削除
+            try:
+                success, delete_message, _ = safe_file_operation('delete', file_path, allowed_dirs=self.allowed_dirs)
+                if not success:
+                    # データベースから削除済みなので、ロールバック
+                    if backup_content is not None:
+                        try:
+                            self.db.insert(existing_record)
+                        except:
+                            pass
+                    
+                    return False, f"ファイル削除失敗: {delete_message}"
+                
+                file_deleted = True
+                return True, f"ファイル「{filename}」を完全に削除しました。"
+                
+            except Exception as file_error:
+                # ファイル削除失敗時のデータベースロールバック
+                if db_updated and backup_content is not None:
+                    try:
+                        self.db.insert(existing_record)
+                    except:
+                        pass
+                
+                print(f"File deletion failed: {file_error}")
+                return False, "ファイル削除中にエラーが発生しました。"
+                
+        except Exception as e:
+            # 一般的なエラー時のクリーンアップ
+            if db_updated and not file_deleted and backup_content is not None:
+                try:
+                    self.db.insert(existing_record)
+                except:
+                    pass
+            
+            print(f"Error deleting file: {e}")
+            return False, "ファイル削除処理中にエラーが発生しました。"
+
+    def read_file_async(self, path: str, progress_callback=None, completion_callback=None, error_callback=None) -> str:
+        """ファイルを非同期で読み取る（大きなファイルでのUI凍結を防止）。
+        
+        Args:
+            path (str): 読み取り対象ファイルの絶対パス
+            progress_callback (Callable, optional): 進捗更新コールバック
+            completion_callback (Callable, optional): 完了時コールバック
+            error_callback (Callable, optional): エラー時コールバック
+        
+        Returns:
+            str: 操作ID（非同期操作の追跡用）
+        """
+        def _async_read():
+            try:
+                # Security validation
+                success, message, validated_path = validate_file_path(path, self.allowed_dirs)
+                if not success:
+                    raise SecurityError(f"Security validation failed: {message}")
+                
+                # Check file size for progress tracking
+                file_size = os.path.getsize(validated_path)
+                
+                if file_size > 1024 * 1024:  # Files larger than 1MB get chunked reading
+                    content = ""
+                    chunk_size = 8192
+                    bytes_read = 0
+                    
+                    with open(validated_path, 'r', encoding='utf-8') as f:
+                        while True:
+                            chunk = f.read(chunk_size)
+                            if not chunk:
+                                break
+                            
+                            content += chunk
+                            bytes_read += len(chunk.encode('utf-8'))
+                            
+                            # Update progress
+                            if progress_callback and file_size > 0:
+                                progress = min(100, int((bytes_read / file_size) * 100))
+                                progress_callback(progress)
+                            
+                            # Small delay for UI responsiveness
+                            import time
+                            time.sleep(0.001)
+                    
+                    return content
+                else:
+                    # Small files read directly
+                    with open(validated_path, 'r', encoding='utf-8') as f:
+                        return f.read()
+                    
+            except Exception as e:
+                raise Exception(f"Error reading file: {str(e)}")
+        
+        return run_with_progress(
+            _async_read,
+            progress_callback=progress_callback
+        )
+    
+    def save_file_async(self, path: str, content: str, progress_callback=None, completion_callback=None, error_callback=None) -> str:
+        """ファイルを非同期で保存する（大きなファイルでのUI凍結を防止）。
+        
+        Args:
+            path (str): 保存先ファイルの絶対パス
+            content (str): 保存するテキスト内容
+            progress_callback (Callable, optional): 進捗更新コールバック
+            completion_callback (Callable, optional): 完了時コールバック
+            error_callback (Callable, optional): エラー時コールバック
+        
+        Returns:
+            str: 操作ID（非同期操作の追跡用）
+        """
+        def _async_save():
+            # Use the existing synchronous save_file method with async wrapper
+            return self.save_file(path, content)
+        
+        return async_manager.run_async_operation(
+            _async_save,
+            progress_callback=progress_callback,
+            completion_callback=completion_callback,
+            error_callback=error_callback
+        )
+
+    def analyze_and_update_tags_async(self, path: str, content: str, progress_callback=None, completion_callback=None, error_callback=None, cancel_event=None) -> str:
+        """AI分析を非同期で実行する（UI凍結防止）。
+        
+        Args:
+            path (str): 分析対象ファイルの絶対パス
+            content (str): 分析するテキスト内容
+            progress_callback (Callable, optional): 進捗更新コールバック
+            completion_callback (Callable, optional): 完了時コールバック
+            error_callback (Callable, optional): エラー時コールバック
+            cancel_event (threading.Event, optional): キャンセル用イベント
+        
+        Returns:
+            str: 操作ID（非同期操作の追跡用）
+        """
+        def _async_analyze():
+            if progress_callback:
+                progress_callback(10)  # Starting analysis
+            
+            try:
+                tags = self._generate_tags_from_ollama(content, cancel_event)
+                
+                if progress_callback:
+                    progress_callback(80)  # Analysis complete, updating DB
+                
+                if "tag_cancelled" in tags:
+                    return False, "分析を中止しました。"
+
+                if not tags or "tag_error" in tags:
+                    return False, "タグ分析に失敗しました。"
+                
+                File = Query()
+                self.db.update({'tags': tags}, File.path == path)
+                
+                if progress_callback:
+                    progress_callback(100)  # Complete
+                
+                return True, "タグを更新しました。"
+                
+            except Exception as e:
+                print(f"Error analyzing and updating tags: {e}")
+                return False, "タグの更新中にエラーが発生しました。"
+        
+        return async_manager.run_async_operation(
+            _async_analyze,
+            progress_callback=progress_callback,
+            completion_callback=completion_callback,
+            error_callback=error_callback
+        )
 
     # 4. 指揮系統の整理：使わなくなった検索機能を一旦コメントアウト
     # def search_files(self, keyword):

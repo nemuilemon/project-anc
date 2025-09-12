@@ -1,0 +1,18 @@
+2025-09-13 02:15:59,923 - ProjectANC.main - INFO - log_app_start:105 - === Project A.N.C. Application Started ===
+2025-09-13 02:15:59,923 - ProjectANC.main - INFO - log_app_start:106 - Python version: 3.12.7 | packaged by Anaconda, Inc. | (main, Oct  4 2024, 13:17:27) [MSC v.1929 64 bit (AMD64)]
+2025-09-13 02:15:59,923 - ProjectANC.main - INFO - log_app_start:107 - Working directory: C:\project-anc
+2025-09-13 02:15:59,925 - ProjectANC.main - INFO - log_database_operation:179 - Database initialize on main_db: SUCCESS - anc_db.json
+2025-09-13 02:15:59,925 - ProjectANC.main - INFO - main:65 - Application logic initialized successfully
+2025-09-13 02:19:32,554 - ProjectANC.main - INFO - log_app_start:105 - === Project A.N.C. Application Started ===
+2025-09-13 02:19:32,554 - ProjectANC.main - INFO - log_app_start:106 - Python version: 3.12.7 | packaged by Anaconda, Inc. | (main, Oct  4 2024, 13:17:27) [MSC v.1929 64 bit (AMD64)]
+2025-09-13 02:19:32,554 - ProjectANC.main - INFO - log_app_start:107 - Working directory: C:\project-anc
+2025-09-13 02:20:16,397 - ProjectANC.main - INFO - log_app_start:105 - === Project A.N.C. Application Started ===
+2025-09-13 02:20:16,397 - ProjectANC.main - INFO - log_app_start:106 - Python version: 3.12.7 | packaged by Anaconda, Inc. | (main, Oct  4 2024, 13:17:27) [MSC v.1929 64 bit (AMD64)]
+2025-09-13 02:20:16,397 - ProjectANC.main - INFO - log_app_start:107 - Working directory: C:\project-anc
+2025-09-13 02:22:33,660 - ProjectANC.main - INFO - log_app_start:105 - === Project A.N.C. Application Started ===
+2025-09-13 02:22:33,660 - ProjectANC.main - INFO - log_app_start:106 - Python version: 3.12.7 | packaged by Anaconda, Inc. | (main, Oct  4 2024, 13:17:27) [MSC v.1929 64 bit (AMD64)]
+2025-09-13 02:22:33,660 - ProjectANC.main - INFO - log_app_start:107 - Working directory: C:\project-anc
+2025-09-13 02:22:33,661 - ProjectANC.main - INFO - log_database_operation:179 - Database initialize on main_db: SUCCESS - anc_db.json
+2025-09-13 02:22:33,662 - ProjectANC.main - INFO - main:65 - Application logic initialized successfully
+2025-09-13 02:22:33,667 - ProjectANC.main - INFO - main:117 - Loaded 7 files in initial file list
+2025-09-13 02:22:33,667 - ProjectANC.main - INFO - main:134 - Application initialization completed successfully
