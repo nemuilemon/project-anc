@@ -7,13 +7,14 @@ class FileListItem(ft.ListTile):
     A custom control inheriting from ListTile to represent a file item.
     It manages its own state (view vs. edit) by swapping its own controls.
     """
-    def __init__(self, file_info, on_update_tags, on_open_file, on_rename_intent):
+    def __init__(self, file_info, on_update_tags, on_open_file, on_rename_intent, on_archive_intent):
         super().__init__()
 
         self.file_info = file_info
         self.on_update_tags = on_update_tags
         self.on_open_file = on_open_file
         self.on_rename_intent = on_rename_intent
+        self.on_archive_intent = on_archive_intent
         self.editing = False
 
         # --- Define all controls that will be used/swapped ---
@@ -31,20 +32,36 @@ class FileListItem(ft.ListTile):
         )
         
         # --- Control Group for View Mode (now a PopupMenuButton) ---
-        self.menu_button = ft.PopupMenuButton(
-            items=[
-                ft.PopupMenuItem(
-                    text="Rename file",
-                    icon=ft.Icons.DRIVE_FILE_RENAME_OUTLINE,
-                    on_click=self.rename_intent_clicked
-                ),
-                ft.PopupMenuItem(
-                    text="Edit tags",
-                    icon=ft.Icons.EDIT,
-                    on_click=self.edit_clicked
-                ),
-            ]
-        )
+        # メニュー項目を動的に構築（アーカイブ状態に応じて）
+        menu_items = [
+            ft.PopupMenuItem(
+                text="Rename file",
+                icon=ft.Icons.DRIVE_FILE_RENAME_OUTLINE,
+                on_click=self.rename_intent_clicked
+            ),
+            ft.PopupMenuItem(
+                text="Edit tags",
+                icon=ft.Icons.EDIT,
+                on_click=self.edit_clicked
+            ),
+        ]
+        
+        # アーカイブ状態に応じてメニュー項目を追加
+        file_status = self.file_info.get('status', 'active')
+        if file_status == 'archived':
+            menu_items.append(ft.PopupMenuItem(
+                text="Unarchive file",
+                icon=ft.Icons.UNARCHIVE,
+                on_click=self.archive_intent_clicked
+            ))
+        else:
+            menu_items.append(ft.PopupMenuItem(
+                text="Archive file",
+                icon=ft.Icons.ARCHIVE,
+                on_click=self.archive_intent_clicked
+            ))
+        
+        self.menu_button = ft.PopupMenuButton(items=menu_items)
 
         self.save_button = ft.IconButton(
             icon=ft.Icons.SAVE,
@@ -79,6 +96,9 @@ class FileListItem(ft.ListTile):
 
     def rename_intent_clicked(self, e):
         self.on_rename_intent(self.file_info)
+    
+    def archive_intent_clicked(self, e):
+        self.on_archive_intent(self.file_info)
 
     def rename_clicked(self, e):
         """Shows a dialog to get a new file name."""
@@ -135,7 +155,7 @@ class FileListItem(ft.ListTile):
 
 
 class AppUI:
-    def __init__(self, page: ft.Page, on_open_file, on_save_file, on_analyze_tags, on_refresh_files, on_update_tags, on_cancel_tags, on_rename_file, on_close_tab, on_create_file):
+    def __init__(self, page: ft.Page, on_open_file, on_save_file, on_analyze_tags, on_refresh_files, on_update_tags, on_cancel_tags, on_rename_file, on_close_tab, on_create_file, on_archive_file):
         self.page = page
         self.on_open_file = on_open_file
         self.on_save_file = on_save_file
@@ -146,9 +166,17 @@ class AppUI:
         self.on_rename_file = on_rename_file
         self.on_close_tab = on_close_tab
         self.on_create_file = on_create_file
+        self.on_archive_file = on_archive_file
 
         self.tabs = ft.Tabs(selected_index=0, expand=True, tabs=[])
         self.file_list = ft.Column(scroll=ft.ScrollMode.AUTO, expand=True)
+        
+        # アーカイブファイル表示切替スイッチ
+        self.show_archived_switch = ft.Switch(
+            label="Show Archived Files",
+            value=False,
+            on_change=self.show_archived_changed
+        )
         
         self.analyze_button = ft.ElevatedButton(
             "Analyze Tags",
@@ -187,7 +215,11 @@ class AppUI:
         )
         
         self.sidebar = ft.Container(
-            content=ft.Column([self.file_list]),
+            content=ft.Column([
+                self.show_archived_switch,
+                ft.Divider(height=10),
+                self.file_list
+            ]),
             width=250, padding=10, bgcolor=ft.Colors.BLACK12
         )
 
@@ -279,6 +311,15 @@ class AppUI:
         
         self.page.overlay.append(self.rename_dialog_overlay)
         self.page.update()
+    
+    def show_archived_changed(self, e):
+        """アーカイブファイル表示切替スイッチの変更を処理する"""
+        # コールバックを呼び出してファイルリストを更新
+        self.on_refresh_files(show_archived=self.show_archived_switch.value)
+    
+    def handle_archive_intent(self, file_info):
+        """アーカイブ操作の意図を受け取り処理する"""
+        self.on_archive_file(file_info['path'])
 
     def new_file_button_clicked(self, e):
         """Shows a custom modal dialog to get a filename for the new file."""
@@ -349,8 +390,17 @@ class AppUI:
                     file_info=info,
                     on_update_tags=self.on_update_tags,
                     on_open_file=self.on_open_file,
-                    on_rename_intent=self.handle_rename_intent
+                    on_rename_intent=self.handle_rename_intent,
+                    on_archive_intent=self.handle_archive_intent
                 )
+                
+                # アーカイブされたファイルの視覚的区別
+                if info.get('status') == 'archived':
+                    list_item.title.color = ft.Colors.GREY_600
+                    list_item.subtitle.color = ft.Colors.GREY_500
+                    # アーカイブアイコンを追加
+                    list_item.leading = ft.Icon(ft.Icons.ARCHIVE, color=ft.Colors.GREY_600)
+                
                 self.file_list.controls.append(list_item)
         self.page.update()
 

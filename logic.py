@@ -9,8 +9,16 @@ class AppLogic:
         self.db = db
         self.sync_database()
 
-    def get_file_list(self):
-        return self.db.all()
+    def get_file_list(self, show_archived=False):
+        """ファイルリストを取得する。デフォルトではアクティブなファイルのみ"""
+        if show_archived:
+            # すべてのファイルを返す
+            return self.db.all()
+        else:
+            # アクティブなファイルのみ返す
+            File = Query()
+            # statusフィールドがないレガシーファイルはアクティブとして扱う
+            return self.db.search((File.status == 'active') | (~File.status.exists()))
 
     # 2. データベース同期機能：フォルダとDBを同期する新機能
     def sync_database(self):
@@ -31,7 +39,7 @@ class AppLogic:
         # 新しいファイルをDBに初期登録する
         for path in new_files:
             title = os.path.basename(path)
-            self.db.insert({'title': title, 'path': path, 'tags': []})
+            self.db.insert({'title': title, 'path': path, 'tags': [], 'status': 'active'})
             print(f"New file found and added to DB: {title}")
 
     # 3. 手動タグ更新機能：タグ情報を更新する新機能
@@ -64,12 +72,13 @@ class AppLogic:
             
             # 既存のドキュメントを取得
             doc = self.db.get(File.path == path)
-            # 既存のタグがあればそれを使い、なければ空のリストを使う
+            # 既存の値があればそれを使い、なければデフォルト値を使う
             existing_tags = doc.get('tags', []) if doc else []
+            existing_status = doc.get('status', 'active') if doc else 'active'
             
             # upsertを使って、ドキュメントを更新または新規作成する
             self.db.upsert(
-                {'title': title, 'path': path, 'tags': existing_tags},
+                {'title': title, 'path': path, 'tags': existing_tags, 'status': existing_status},
                 File.path == path
             )
             return True, title
@@ -169,7 +178,8 @@ class AppLogic:
             self.db.insert({
                 'title': filename,
                 'path': full_path,
-                'tags': []
+                'tags': [],
+                'status': 'active'
             })
             
             return True, f"新しいファイル「{filename}」を作成しました。"
@@ -209,6 +219,68 @@ class AppLogic:
             if os.path.exists(new_path):
                 os.rename(new_path, old_path)
             return False, "ファイル名の変更中にエラーが発生しました。", None, None
+
+    def archive_file(self, file_path):
+        """ファイルをアーカイブフォルダに移動し、DBのレコードを更新する"""
+        try:
+            # 1. アーカイブディレクトリが存在しない場合は作成
+            if not os.path.exists(config.ARCHIVE_DIR):
+                os.makedirs(config.ARCHIVE_DIR)
+            
+            # 2. 新しいアーカイブパスを生成
+            filename = os.path.basename(file_path)
+            archive_path = os.path.join(config.ARCHIVE_DIR, filename)
+            
+            # 3. アーカイブフォルダに同名ファイルがある場合の処理
+            if os.path.exists(archive_path):
+                return False, "アーカイブフォルダに同じ名前のファイルが既に存在します。"
+            
+            # 4. ファイルをアーカイブフォルダに移動
+            os.rename(file_path, archive_path)
+            
+            # 5. データベースのレコードを更新
+            File = Query()
+            self.db.update(
+                {'path': archive_path, 'status': 'archived'},
+                File.path == file_path
+            )
+            
+            return True, f"ファイル「{filename}」をアーカイブしました。"
+        except Exception as e:
+            print(f"Error archiving file: {e}")
+            # ファイル移動が失敗した場合、元に戻す試み
+            if os.path.exists(archive_path):
+                os.rename(archive_path, file_path)
+            return False, "ファイルのアーカイブ中にエラーが発生しました。"
+
+    def unarchive_file(self, file_path):
+        """アーカイブされたファイルを元のフォルダに戻す"""
+        try:
+            # 1. 元のフォルダでの新しいパスを生成
+            filename = os.path.basename(file_path)
+            active_path = os.path.join(config.NOTES_DIR, filename)
+            
+            # 2. 元のフォルダに同名ファイルがある場合の処理
+            if os.path.exists(active_path):
+                return False, "アクティブフォルダに同じ名前のファイルが既に存在します。"
+            
+            # 3. ファイルを元のフォルダに移動
+            os.rename(file_path, active_path)
+            
+            # 4. データベースのレコードを更新
+            File = Query()
+            self.db.update(
+                {'path': active_path, 'status': 'active'},
+                File.path == file_path
+            )
+            
+            return True, f"ファイル「{filename}」をアクティブに戻しました。"
+        except Exception as e:
+            print(f"Error unarchiving file: {e}")
+            # ファイル移動が失敗した場合、元に戻す試み
+            if os.path.exists(active_path):
+                os.rename(active_path, file_path)
+            return False, "ファイルのアーカイブ解除中にエラーが発生しました。"
 
     # 4. 指揮系統の整理：使わなくなった検索機能を一旦コメントアウト
     # def search_files(self, keyword):
