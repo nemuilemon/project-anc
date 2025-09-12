@@ -144,6 +144,39 @@ class AppLogic:
         print(f"最大試行回数({MAX_RETRIES}回)を超えました。タグ付けをスキップします。")
         return []
 
+    def rename_file(self, old_path, new_name):
+        """ファイル名を変更し、DBのレコードも更新する"""
+        # 1. 新しいファイル名の検証
+        if not new_name.endswith('.md'):
+            new_name += '.md'
+        
+        # 新しいフルパスを生成
+        new_path = os.path.join(os.path.dirname(old_path), new_name)
+
+        # 2. ファイル名の衝突チェック
+        if os.path.exists(new_path):
+            return False, "同じ名前のファイルが既に存在します。", None, None
+
+        try:
+            # 3. ファイルシステム上で名前を変更
+            os.rename(old_path, new_path)
+
+            # 4. データベースのレコードを更新
+            File = Query()
+            new_title = os.path.basename(new_path)
+            self.db.update(
+                {'title': new_title, 'path': new_path},
+                File.path == old_path
+            )
+            
+            return True, f"ファイル名を「{new_title}」に変更しました。", old_path, new_path
+        except Exception as e:
+            print(f"Error renaming file: {e}")
+            # もしDB更新前にエラーが起きた場合、ファイル名を元に戻す試み
+            if os.path.exists(new_path):
+                os.rename(new_path, old_path)
+            return False, "ファイル名の変更中にエラーが発生しました。", None, None
+
     # 4. 指揮系統の整理：使わなくなった検索機能を一旦コメントアウト
     # def search_files(self, keyword):
     #     if not keyword:

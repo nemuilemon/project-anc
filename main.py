@@ -114,6 +114,22 @@ def main(page: ft.Page):
             print("Cancellation requested by user.")
             cancel_event.set() # イベントをセットして、スレッドに伝える
 
+    def handle_rename_file(old_path: str, new_name: str):
+        """ファイル名の変更命令を処理する"""
+        success, message, old_path, new_path = app_logic.rename_file(old_path, new_name)
+        
+        page.snack_bar = ft.SnackBar(content=ft.Text(message))
+        page.snack_bar.open = True
+        
+        if success:
+            # ファイルリストを更新
+            all_files = app_logic.get_file_list()
+            app_ui.update_file_list(all_files)
+            # 開いているタブがあれば、そちらも更新
+            app_ui.update_tab_after_rename(old_path, new_path)
+
+        page.update()
+
     # AppUIのインスタンス作成時に、新しい on_cancel_tags を渡す
     app_ui = AppUI(
         page,
@@ -122,7 +138,8 @@ def main(page: ft.Page):
         on_analyze_tags=handle_analyze_tags,
         on_refresh_files=handle_refresh_files,
         on_update_tags=handle_update_tags,
-        on_cancel_tags=handle_cancel_tags # 追加
+        on_cancel_tags=handle_cancel_tags, # 追加
+        on_rename_file=handle_rename_file # ★追加
     )
     
     page.appbar = app_ui.appbar
