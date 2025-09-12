@@ -153,6 +153,24 @@ def main(page: ft.Page):
         
         page.update()
 
+    def handle_create_file(filename: str):
+        """新しいファイルの作成命令を処理する"""
+        success, message = app_logic.create_new_file(filename)
+        
+        page.snack_bar = ft.SnackBar(content=ft.Text(message))
+        page.snack_bar.open = True
+        
+        if success:
+            # ファイルリストを更新
+            all_files = app_logic.get_file_list()
+            app_ui.update_file_list(all_files)
+            
+            # 新しく作成したファイルを自動的に開く
+            full_path = os.path.join(config.NOTES_DIR, filename if filename.endswith('.md') else filename + '.md')
+            handle_open_file(full_path)
+        
+        page.update()
+
     # AppUIのインスタンス作成時に、新しい on_cancel_tags を渡す
     app_ui = AppUI(
         page,
@@ -163,7 +181,8 @@ def main(page: ft.Page):
         on_update_tags=handle_update_tags,
         on_cancel_tags=handle_cancel_tags, # 追加
         on_rename_file=handle_rename_file, # ★追加
-        on_close_tab=handle_close_tab # ★追加
+        on_close_tab=handle_close_tab, # ★追加
+        on_create_file=handle_create_file # ★追加
     )
     
     page.appbar = app_ui.appbar

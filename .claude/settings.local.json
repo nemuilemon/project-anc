@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python:*)",
+      "Bash(del test_create_file.py)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

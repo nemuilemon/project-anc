@@ -144,6 +144,39 @@ class AppLogic:
         print(f"最大試行回数({MAX_RETRIES}回)を超えました。タグ付けをスキップします。")
         return []
 
+    def create_new_file(self, filename):
+        """新しい空の.mdファイルを作成し、DBにレコードを追加する"""
+        # 1. ファイル名の検証と正規化
+        if not filename.strip():
+            return False, "ファイル名を入力してください。"
+        
+        if not filename.endswith('.md'):
+            filename += '.md'
+        
+        # 2. フルパスを生成
+        full_path = os.path.join(config.NOTES_DIR, filename)
+        
+        # 3. ファイル名の衝突チェック
+        if os.path.exists(full_path):
+            return False, "同じ名前のファイルが既に存在します。"
+        
+        try:
+            # 4. 空のファイルを作成
+            with open(full_path, "w", encoding="utf-8") as f:
+                f.write("")
+            
+            # 5. データベースにレコードを追加
+            self.db.insert({
+                'title': filename,
+                'path': full_path,
+                'tags': []
+            })
+            
+            return True, f"新しいファイル「{filename}」を作成しました。"
+        except Exception as e:
+            print(f"Error creating file: {e}")
+            return False, "ファイルの作成中にエラーが発生しました。"
+
     def rename_file(self, old_path, new_name):
         """ファイル名を変更し、DBのレコードも更新する"""
         # 1. 新しいファイル名の検証

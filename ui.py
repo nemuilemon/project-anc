@@ -135,7 +135,7 @@ class FileListItem(ft.ListTile):
 
 
 class AppUI:
-    def __init__(self, page: ft.Page, on_open_file, on_save_file, on_analyze_tags, on_refresh_files, on_update_tags, on_cancel_tags, on_rename_file, on_close_tab):
+    def __init__(self, page: ft.Page, on_open_file, on_save_file, on_analyze_tags, on_refresh_files, on_update_tags, on_cancel_tags, on_rename_file, on_close_tab, on_create_file):
         self.page = page
         self.on_open_file = on_open_file
         self.on_save_file = on_save_file
@@ -145,6 +145,7 @@ class AppUI:
         self.on_cancel_tags = on_cancel_tags
         self.on_rename_file = on_rename_file
         self.on_close_tab = on_close_tab
+        self.on_create_file = on_create_file
 
         self.tabs = ft.Tabs(selected_index=0, expand=True, tabs=[])
         self.file_list = ft.Column(scroll=ft.ScrollMode.AUTO, expand=True)
@@ -162,9 +163,17 @@ class AppUI:
         )
         self.progress_ring = ft.ProgressRing(visible=False) # 最初は隠しておく
 
+        # Create new file button separately for testing
+        self.new_file_button = ft.IconButton(
+            icon=ft.Icons.ADD,
+            tooltip="New File",
+            on_click=self.new_file_button_clicked
+        )
+        
         self.appbar = ft.AppBar(
             title=ft.Text("Project A.N.C."),
             actions=[
+                self.new_file_button,  # Use the separate button
                 ft.IconButton(
                     icon=ft.Icons.REFRESH,
                     tooltip="Refresh file list",
@@ -177,8 +186,15 @@ class AppUI:
             ]
         )
         
+        # Test button in sidebar as well
+        test_new_file_btn = ft.ElevatedButton(
+            "New File (Test)", 
+            icon=ft.Icons.ADD,
+            on_click=self.new_file_button_clicked
+        )
+        
         self.sidebar = ft.Container(
-            content=ft.Column([self.file_list]),
+            content=ft.Column([test_new_file_btn, self.file_list]),
             width=250, padding=10, bgcolor=ft.Colors.BLACK12
         )
 
@@ -244,6 +260,70 @@ class AppUI:
         self.page.dialog = rename_dialog
         self.page.dialog.open = True
         self.page.update()
+
+    def new_file_button_clicked(self, e):
+        """Shows a custom modal dialog to get a filename for the new file."""
+        print("New file button clicked - creating custom modal")  # Debug
+        
+        filename_field = ft.TextField(
+            label="File name",
+            autofocus=True,
+            hint_text="Enter filename (without .md extension)",
+            expand=True
+        )
+
+        def close_custom_dialog(e=None):
+            print("Closing custom dialog")  # Debug
+            # Remove the overlay - page.overlay is a list, not an object with .controls
+            if hasattr(self, 'dialog_overlay') and self.dialog_overlay in self.page.overlay:
+                self.page.overlay.remove(self.dialog_overlay)
+                self.page.update()
+
+        def create_file_action(e):
+            filename = filename_field.value.strip()
+            print(f"Create file action: filename='{filename}'")  # Debug
+            if filename:
+                close_custom_dialog()
+                self.on_create_file(filename)
+            else:
+                # Show error message
+                self.page.snack_bar = ft.SnackBar(content=ft.Text("Please enter a filename"))
+                self.page.snack_bar.open = True
+                self.page.update()
+
+        # Create custom modal dialog using Container
+        self.dialog_overlay = ft.Container(
+            content=ft.Container(
+                content=ft.Column([
+                    ft.Text("Create New File", size=20, weight=ft.FontWeight.BOLD),
+                    ft.Divider(height=20),
+                    filename_field,
+                    ft.Row([
+                        ft.TextButton("Cancel", on_click=close_custom_dialog),
+                        ft.FilledButton("Create", on_click=create_file_action),
+                    ], alignment=ft.MainAxisAlignment.END, spacing=10)
+                ], spacing=15, tight=True),
+                padding=ft.padding.all(20),
+                bgcolor=ft.Colors.WHITE,
+                border_radius=10,
+                shadow=ft.BoxShadow(
+                    spread_radius=1,
+                    blur_radius=15,
+                    color=ft.Colors.BLACK26,
+                    offset=ft.Offset(0, 4),
+                ),
+                width=400,
+            ),
+            alignment=ft.alignment.center,
+            bgcolor=ft.Colors.BLACK54,  # Semi-transparent background
+            expand=True,
+            on_click=close_custom_dialog  # Close when clicking outside
+        )
+        
+        print("Adding custom dialog to overlay")  # Debug
+        self.page.overlay.append(self.dialog_overlay)
+        self.page.update()
+        print("Custom dialog should be visible")  # Debug
 
     def update_file_list(self, files_info):
         self.file_list.controls.clear()
