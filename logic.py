@@ -3,10 +3,13 @@ import os
 from tinydb import Query
 import config
 import ollama
+from security import sanitize_filename, validate_file_path, safe_file_operation, create_safe_directory, SecurityError
 
 class AppLogic:
     def __init__(self, db):
         self.db = db
+        # Define allowed directories for security validation
+        self.allowed_dirs = [config.NOTES_DIR, config.ARCHIVE_DIR]
         self.sync_database()
 
     def get_file_list(self, show_archived=False):
@@ -110,14 +113,19 @@ class AppLogic:
             str or None: ファイルの内容（UTF-8）。エラーの場合はNone。
         
         Note:
+            セキュリティ検証を行い、許可されたディレクトリ内のファイルのみ読み取る。
             ファイルが存在しない、アクセス権限がない等の場合はNoneを返し、
             エラー内容はコンソールに出力される。
         """
         try:
-            with open(path, "r", encoding="utf-8") as f:
-                return f.read()
+            success, message, content = safe_file_operation('read', path, allowed_dirs=self.allowed_dirs)
+            if success:
+                return content
+            else:
+                print(f"Error reading file: {message}")
+                return None
         except Exception as e:
-            print(f"Error reading file: {e}")
+            print(f"Unexpected error reading file: {e}")
             return None
 
     def save_file(self, path, content):
@@ -133,24 +141,32 @@ class AppLogic:
                 - str or None: 成功時はファイル名、失敗時はNone
         
         Note:
+            セキュリティ検証を行い、トランザクション的な操作でファイル保存とDB更新を実行する。
             新しいファイルの場合は自動的にDBレコードを作成し、
             既存ファイルの場合は既存の情報（タグ、ステータス等）を保持する。
         """
+        # Transaction state tracking
+        file_created = False
+        db_updated = False
+        
         try:
-            with open(path, "w", encoding="utf-8") as f:
-                f.write(content)
-
-            File = Query()
+            # Security validation
+            success, message, validated_path = validate_file_path(path, self.allowed_dirs)
+            if not success:
+                print(f"Security validation failed: {message}")
+                return False, None
+            
+            path = validated_path
             title = os.path.basename(path)
             
-            # 既存のドキュメントを取得
+            # Get existing document before making changes
+            File = Query()
             doc = self.db.get(File.path == path)
-            # 既存の値があればそれを使い、なければデフォルト値を使う
             existing_tags = doc.get('tags', []) if doc else []
             existing_status = doc.get('status', 'active') if doc else 'active'
             existing_order_index = doc.get('order_index', 0) if doc else 0
             
-            # 新しいファイルの場合は order_index を設定
+            # Set order_index for new files
             if not doc:
                 all_records = self.db.all()
                 if all_records:
@@ -158,13 +174,57 @@ class AppLogic:
                 else:
                     existing_order_index = 1
             
-            # upsertを使って、ドキュメントを更新または新規作成する
-            self.db.upsert(
-                {'title': title, 'path': path, 'tags': existing_tags, 'status': existing_status, 'order_index': existing_order_index},
-                File.path == path
-            )
-            return True, title
+            # Create backup of existing file if it exists
+            backup_content = None
+            if os.path.exists(path):
+                try:
+                    with open(path, 'r', encoding='utf-8') as f:
+                        backup_content = f.read()
+                except:
+                    pass
+            
+            # Perform file write
+            success, write_message, _ = safe_file_operation('write', path, content, self.allowed_dirs)
+            if not success:
+                print(f"File write failed: {write_message}")
+                return False, None
+            
+            file_created = True
+            
+            # Update database
+            try:
+                self.db.upsert(
+                    {'title': title, 'path': path, 'tags': existing_tags, 'status': existing_status, 'order_index': existing_order_index},
+                    File.path == path
+                )
+                db_updated = True
+                return True, title
+                
+            except Exception as db_error:
+                # Rollback file write if database update fails
+                if backup_content is not None:
+                    try:
+                        with open(path, 'w', encoding='utf-8') as f:
+                            f.write(backup_content)
+                    except:
+                        pass
+                else:
+                    try:
+                        os.remove(path)
+                    except:
+                        pass
+                
+                print(f"Database update failed, file rolled back: {db_error}")
+                return False, None
+                
         except Exception as e:
+            # Attempt rollback if something went wrong
+            if file_created and not db_updated:
+                try:
+                    os.remove(path)
+                except:
+                    pass
+            
             print(f"Error saving file: {e}")
             return False, None
 
@@ -278,79 +338,189 @@ class AppLogic:
             既存ファイルと同名の場合は失敗を返す（上書きしない）
         
         Note:
+            セキュリティ検証とファイル名のサニタイゼーションを行い、
             作成されたファイルは自動的に最後の順序（最大order_index + 1）で
             データベースに登録される。
         """
-        # 1. ファイル名の検証と正規化
-        if not filename.strip():
-            return False, "ファイル名を入力してください。"
-        
-        if not filename.endswith('.md'):
-            filename += '.md'
-        
-        # 2. フルパスを生成
-        full_path = os.path.join(config.NOTES_DIR, filename)
-        
-        # 3. ファイル名の衝突チェック
-        if os.path.exists(full_path):
-            return False, "同じ名前のファイルが既に存在します。"
+        # Transaction state tracking
+        file_created = False
         
         try:
-            # 4. 空のファイルを作成
-            with open(full_path, "w", encoding="utf-8") as f:
-                f.write("")
+            # 1. ファイル名の検証とサニタイゼーション
+            if not filename or not filename.strip():
+                return False, "ファイル名を入力してください。"
             
-            # 5. データベースにレコードを追加（order_indexは最大値+1）
+            try:
+                sanitized_filename = sanitize_filename(filename.strip())
+            except SecurityError as e:
+                return False, f"ファイル名が無効です: {str(e)}"
+            
+            # 2. 拡張子の確認・付与
+            if not sanitized_filename.endswith('.md'):
+                sanitized_filename += '.md'
+            
+            # 3. フルパスを生成
+            full_path = os.path.join(config.NOTES_DIR, sanitized_filename)
+            
+            # 4. パス検証
+            success, message, validated_path = validate_file_path(full_path, self.allowed_dirs)
+            if not success:
+                return False, f"パス検証失敗: {message}"
+            
+            full_path = validated_path
+            
+            # 5. ディレクトリ作成
+            dir_success, dir_message = create_safe_directory(config.NOTES_DIR)
+            if not dir_success:
+                return False, f"ディレクトリ作成失敗: {dir_message}"
+            
+            # 6. ファイル名の衝突チェック
+            if os.path.exists(full_path):
+                return False, "同じ名前のファイルが既に存在します。"
+            
+            # 7. データベースの状態を事前に確認
             existing_max_order = 0
             all_records = self.db.all()
             if all_records:
                 existing_max_order = max([doc.get('order_index', 0) for doc in all_records])
             
             order_index = existing_max_order + 1
-            self.db.insert({
-                'title': filename,
-                'path': full_path,
-                'tags': [],
-                'status': 'active',
-                'order_index': order_index
-            })
             
-            return True, f"新しいファイル「{filename}」を作成しました。"
+            # 8. ファイル作成
+            success, write_message, _ = safe_file_operation('write', full_path, "", self.allowed_dirs)
+            if not success:
+                return False, f"ファイル作成失敗: {write_message}"
+            
+            file_created = True
+            
+            # 9. データベースにレコードを追加
+            try:
+                self.db.insert({
+                    'title': sanitized_filename,
+                    'path': full_path,
+                    'tags': [],
+                    'status': 'active',
+                    'order_index': order_index
+                })
+                
+                return True, f"新しいファイル「{sanitized_filename}」を作成しました。"
+                
+            except Exception as db_error:
+                # データベース挿入失敗時のファイル削除
+                if file_created:
+                    try:
+                        os.remove(full_path)
+                    except:
+                        pass
+                
+                print(f"Database insertion failed: {db_error}")
+                return False, "データベースへの登録中にエラーが発生しました。"
+            
         except Exception as e:
+            # 一般的なエラー時のクリーンアップ
+            if file_created:
+                try:
+                    os.remove(full_path)
+                except:
+                    pass
+            
             print(f"Error creating file: {e}")
             return False, "ファイルの作成中にエラーが発生しました。"
 
     def rename_file(self, old_path, new_name):
         """ファイル名を変更し、DBのレコードも更新する"""
-        # 1. 新しいファイル名の検証
-        if not new_name.endswith('.md'):
-            new_name += '.md'
+        # Transaction state tracking
+        file_renamed = False
         
-        # 新しいフルパスを生成
-        new_path = os.path.join(os.path.dirname(old_path), new_name)
-
-        # 2. ファイル名の衝突チェック
-        if os.path.exists(new_path):
-            return False, "同じ名前のファイルが既に存在します。", None, None
-
         try:
-            # 3. ファイルシステム上で名前を変更
-            os.rename(old_path, new_path)
-
-            # 4. データベースのレコードを更新
-            File = Query()
-            new_title = os.path.basename(new_path)
-            self.db.update(
-                {'title': new_title, 'path': new_path},
-                File.path == old_path
-            )
+            # 1. 入力検証とサニタイゼーション
+            if not new_name or not new_name.strip():
+                return False, "新しいファイル名を入力してください。", None, None
             
-            return True, f"ファイル名を「{new_title}」に変更しました。", old_path, new_path
-        except Exception as e:
-            print(f"Error renaming file: {e}")
-            # もしDB更新前にエラーが起きた場合、ファイル名を元に戻す試み
+            try:
+                sanitized_name = sanitize_filename(new_name.strip())
+            except SecurityError as e:
+                return False, f"ファイル名が無効です: {str(e)}", None, None
+            
+            # 2. 拡張子の確認・付与
+            if not sanitized_name.endswith('.md'):
+                sanitized_name += '.md'
+            
+            # 3. パスの検証
+            success, message, validated_old_path = validate_file_path(old_path, self.allowed_dirs)
+            if not success:
+                return False, f"元ファイルのパス検証失敗: {message}", None, None
+            
+            old_path = validated_old_path
+            
+            # 4. 新しいフルパスを生成
+            new_path = os.path.join(os.path.dirname(old_path), sanitized_name)
+            
+            # 5. 新しいパスの検証
+            success, message, validated_new_path = validate_file_path(new_path, self.allowed_dirs)
+            if not success:
+                return False, f"新ファイルのパス検証失敗: {message}", None, None
+            
+            new_path = validated_new_path
+            
+            # 6. ファイル存在確認
+            if not os.path.exists(old_path):
+                return False, "変更対象のファイルが見つかりません。", None, None
+            
+            # 7. ファイル名の衝突チェック
             if os.path.exists(new_path):
-                os.rename(new_path, old_path)
+                return False, "同じ名前のファイルが既に存在します。", None, None
+            
+            # 8. データベースの事前確認
+            File = Query()
+            existing_record = self.db.get(File.path == old_path)
+            if not existing_record:
+                return False, "データベースにファイル記録が見つかりません。", None, None
+            
+            # 9. ファイルシステム上で名前を変更
+            try:
+                os.rename(old_path, new_path)
+                file_renamed = True
+            except PermissionError:
+                return False, "ファイルの変更権限がありません。", None, None
+            except OSError as e:
+                return False, f"ファイル名変更エラー: {str(e)}", None, None
+            
+            # 10. データベースのレコードを更新
+            try:
+                new_title = os.path.basename(new_path)
+                updated_count = self.db.update(
+                    {'title': new_title, 'path': new_path},
+                    File.path == old_path
+                )
+                
+                if updated_count == 0:
+                    # データベース更新失敗時のロールバック
+                    os.rename(new_path, old_path)
+                    return False, "データベースの更新に失敗しました。", None, None
+                
+                return True, f"ファイル名を「{new_title}」に変更しました。", old_path, new_path
+                
+            except Exception as db_error:
+                # データベース更新失敗時のロールバック
+                if file_renamed:
+                    try:
+                        os.rename(new_path, old_path)
+                    except:
+                        pass
+                
+                print(f"Database update failed during rename: {db_error}")
+                return False, "データベース更新中にエラーが発生しました。", None, None
+                
+        except Exception as e:
+            # 一般的なエラー時のロールバック
+            if file_renamed:
+                try:
+                    os.rename(new_path, old_path)
+                except:
+                    pass
+            
+            print(f"Error renaming file: {e}")
             return False, "ファイル名の変更中にエラーが発生しました。", None, None
 
     def archive_file(self, file_path):

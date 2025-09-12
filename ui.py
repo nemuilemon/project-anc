@@ -1,5 +1,6 @@
 import flet as ft
 import os
+from security import sanitize_filename, validate_search_input, SecurityError
 
 # --- New Approach: Inherit from a specific layout control (Flet >= 0.21.0) ---
 class FileListItem(ft.ListTile):
@@ -337,12 +338,26 @@ class AppUI:
 
         def perform_rename_action(e):
             new_name = new_name_field.value.strip()
-            if new_name:
-                close_rename_dialog()
-                self.on_rename_file(file_info['path'], new_name)
-            else:
+            if not new_name:
                 # Show error message
                 self.page.snack_bar = ft.SnackBar(content=ft.Text("Please enter a filename"))
+                self.page.snack_bar.open = True
+                self.page.update()
+                return
+            
+            # Validate and sanitize filename
+            try:
+                sanitized_name = sanitize_filename(new_name)
+                close_rename_dialog()
+                self.on_rename_file(file_info['path'], sanitized_name)
+            except SecurityError as security_error:
+                # Show security error message
+                self.page.snack_bar = ft.SnackBar(content=ft.Text(f"Invalid filename: {str(security_error)}"))
+                self.page.snack_bar.open = True
+                self.page.update()
+            except Exception as e:
+                # Show general error message
+                self.page.snack_bar = ft.SnackBar(content=ft.Text(f"Error validating filename: {str(e)}"))
                 self.page.snack_bar.open = True
                 self.page.update()
 
@@ -437,12 +452,26 @@ class AppUI:
 
         def create_file_action(e):
             filename = filename_field.value.strip()
-            if filename:
-                close_custom_dialog()
-                self.on_create_file(filename)
-            else:
+            if not filename:
                 # Show error message
                 self.page.snack_bar = ft.SnackBar(content=ft.Text("Please enter a filename"))
+                self.page.snack_bar.open = True
+                self.page.update()
+                return
+            
+            # Validate and sanitize filename
+            try:
+                sanitized_filename = sanitize_filename(filename)
+                close_custom_dialog()
+                self.on_create_file(sanitized_filename)
+            except SecurityError as security_error:
+                # Show security error message
+                self.page.snack_bar = ft.SnackBar(content=ft.Text(f"Invalid filename: {str(security_error)}"))
+                self.page.snack_bar.open = True
+                self.page.update()
+            except Exception as e:
+                # Show general error message
+                self.page.snack_bar = ft.SnackBar(content=ft.Text(f"Error validating filename: {str(e)}"))
                 self.page.snack_bar.open = True
                 self.page.update()
 

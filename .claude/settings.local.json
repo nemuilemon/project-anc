@@ -5,7 +5,9 @@
       "Bash(del test_create_file.py)",
       "Bash(source:*)",
       "Bash(.venv/Scripts/activate)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git push:*)",
+      "Bash(pip freeze)"
     ],
     "deny": [],
     "ask": []

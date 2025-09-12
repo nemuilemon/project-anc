@@ -20,12 +20,48 @@ def main(page: ft.Page):
         この関数はFletアプリケーションのエントリーポイントとして
         ft.app()から呼び出される。
     """
-    page.title = "Project A.N.C. (Alice Nexus Core)"
-    if not os.path.exists(config.NOTES_DIR):
-        os.makedirs(config.NOTES_DIR)
-    db = TinyDB(config.DB_FILE)
+    try:
+        page.title = "Project A.N.C. (Alice Nexus Core)"
+        
+        # ディレクトリの安全な作成
+        try:
+            if not os.path.exists(config.NOTES_DIR):
+                os.makedirs(config.NOTES_DIR, exist_ok=True)
+        except PermissionError:
+            page.snack_bar = ft.SnackBar(content=ft.Text(f"Permission denied creating directory: {config.NOTES_DIR}"))
+            page.snack_bar.open = True
+            page.update()
+            return
+        except OSError as e:
+            page.snack_bar = ft.SnackBar(content=ft.Text(f"Error creating directory: {str(e)}"))
+            page.snack_bar.open = True
+            page.update()
+            return
+        
+        # データベースの安全な初期化
+        try:
+            db = TinyDB(config.DB_FILE)
+        except Exception as e:
+            page.snack_bar = ft.SnackBar(content=ft.Text(f"Database initialization failed: {str(e)}"))
+            page.snack_bar.open = True
+            page.update()
+            return
 
-    app_logic = AppLogic(db)
+        # アプリケーションロジックの初期化
+        try:
+            app_logic = AppLogic(db)
+        except Exception as e:
+            page.snack_bar = ft.SnackBar(content=ft.Text(f"Application logic initialization failed: {str(e)}"))
+            page.snack_bar.open = True
+            page.update()
+            return
+    except Exception as e:
+        print(f"Critical error during application initialization: {e}")
+        if hasattr(page, 'snack_bar'):
+            page.snack_bar = ft.SnackBar(content=ft.Text(f"Critical initialization error: {str(e)}"))
+            page.snack_bar.open = True
+            page.update()
+        return
 
     # --- 状態管理用の変数を追加 ---
     # 分析処理の実行状態を管理するフラグ
@@ -34,17 +70,43 @@ def main(page: ft.Page):
     cancel_event = Event()
 
     def handle_open_file(path: str):
-        content = app_logic.read_file(path)
-        if content is not None:
-            app_ui.add_or_focus_tab(path, content)
+        try:
+            content = app_logic.read_file(path)
+            if content is not None:
+                app_ui.add_or_focus_tab(path, content)
+            else:
+                page.snack_bar = ft.SnackBar(content=ft.Text("ファイルの読み込みに失敗しました。"))
+                page.snack_bar.open = True
+                page.update()
+        except Exception as e:
+            print(f"Error in handle_open_file: {e}")
+            page.snack_bar = ft.SnackBar(content=ft.Text(f"ファイルオープンエラー: {str(e)}"))
+            page.snack_bar.open = True
+            page.update()
 
     def handle_save_file(path: str, content: str):
-        success, title = app_logic.save_file(path, content)
-        if success:
-            page.snack_bar = ft.SnackBar(content=ft.Text(f"『{title}』を保存しました。"))
+        try:
+            success, title = app_logic.save_file(path, content)
+            if success:
+                page.snack_bar = ft.SnackBar(content=ft.Text(f"『{title}』を保存しました。"))
+                page.snack_bar.open = True
+                
+                try:
+                    all_files = app_logic.get_file_list()
+                    app_ui.update_file_list(all_files)
+                except Exception as list_error:
+                    print(f"Error updating file list after save: {list_error}")
+                    # Continue anyway since file was saved successfully
+                
+                page.update()
+            else:
+                page.snack_bar = ft.SnackBar(content=ft.Text("ファイルの保存に失敗しました。"))
+                page.snack_bar.open = True
+                page.update()
+        except Exception as e:
+            print(f"Error in handle_save_file: {e}")
+            page.snack_bar = ft.SnackBar(content=ft.Text(f"保存処理エラー: {str(e)}"))
             page.snack_bar.open = True
-            all_files = app_logic.get_file_list()
-            app_ui.update_file_list(all_files)
             page.update()
 
     def run_tag_analysis(path, content):
@@ -101,12 +163,18 @@ def main(page: ft.Page):
 
     def handle_refresh_files(show_archived=False):
         """ファイルリストの更新命令を処理する"""
-        app_logic.sync_database()
-        all_files = app_logic.get_file_list(show_archived=show_archived)
-        app_ui.update_file_list(all_files)
-        page.snack_bar = ft.SnackBar(content=ft.Text("ファイルリストを更新しました。"))
-        page.snack_bar.open = True
-        page.update()
+        try:
+            app_logic.sync_database()
+            all_files = app_logic.get_file_list(show_archived=show_archived)
+            app_ui.update_file_list(all_files)
+            page.snack_bar = ft.SnackBar(content=ft.Text("ファイルリストを更新しました。"))
+            page.snack_bar.open = True
+            page.update()
+        except Exception as e:
+            print(f"Error in handle_refresh_files: {e}")
+            page.snack_bar = ft.SnackBar(content=ft.Text(f"ファイルリスト更新エラー: {str(e)}"))
+            page.snack_bar.open = True
+            page.update()
 
     def handle_update_tags(path: str, tags: list):
         """タグの手動更新命令を処理する"""
@@ -253,26 +321,51 @@ def main(page: ft.Page):
         
         page.update()
 
-    # AppUIのインスタンス作成時に、新しい on_cancel_tags を渡す
-    app_ui = AppUI(
-        page,
-        on_open_file=handle_open_file, 
-        on_save_file=handle_save_file,
-        on_analyze_tags=handle_analyze_tags,
-        on_refresh_files=handle_refresh_files,
-        on_update_tags=handle_update_tags,
-        on_cancel_tags=handle_cancel_tags, # 追加
-        on_rename_file=handle_rename_file, # ★追加
-        on_close_tab=handle_close_tab, # ★追加
-        on_create_file=handle_create_file, # ★追加
-        on_archive_file=handle_archive_file, # ★追加
-        on_update_order=handle_update_order # ★追加
-    )
-    
-    page.appbar = app_ui.appbar
-    page.add(app_ui.build())
+    # AppUIのインスタンス作成とエラーハンドリング
+    try:
+        app_ui = AppUI(
+            page,
+            on_open_file=handle_open_file, 
+            on_save_file=handle_save_file,
+            on_analyze_tags=handle_analyze_tags,
+            on_refresh_files=handle_refresh_files,
+            on_update_tags=handle_update_tags,
+            on_cancel_tags=handle_cancel_tags, # 追加
+            on_rename_file=handle_rename_file, # ★追加
+            on_close_tab=handle_close_tab, # ★追加
+            on_create_file=handle_create_file, # ★追加
+            on_archive_file=handle_archive_file, # ★追加
+            on_update_order=handle_update_order # ★追加
+        )
+        
+        page.appbar = app_ui.appbar
+        page.add(app_ui.build())
 
-    initial_files = app_logic.get_file_list()
-    app_ui.update_file_list(initial_files)
+        # 初期ファイルリストの読み込み
+        try:
+            initial_files = app_logic.get_file_list()
+            app_ui.update_file_list(initial_files)
+        except Exception as e:
+            print(f"Error loading initial file list: {e}")
+            page.snack_bar = ft.SnackBar(content=ft.Text("ファイルリストの初期読み込みでエラーが発生しました。"))
+            page.snack_bar.open = True
+            page.update()
+            
+    except Exception as e:
+        print(f"Error creating UI: {e}")
+        page.snack_bar = ft.SnackBar(content=ft.Text(f"UIの作成でエラーが発生しました: {str(e)}"))
+        page.snack_bar.open = True
+        page.update()
+        return
 
-ft.app(target=main)
+# アプリケーションエントリーポイントのセーフラッパー
+def safe_main():
+    """アプリケーションのメイン関数を安全に実行するラッパー"""
+    try:
+        ft.app(target=main)
+    except Exception as e:
+        print(f"Critical application error: {e}")
+        print("Please check your configuration and try again.")
+        
+if __name__ == "__main__":
+    safe_main()

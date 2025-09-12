@@ -17,6 +17,7 @@ cleanup.py
 
 # agent
 log.md
+.claude/
 
 # build
 build/
