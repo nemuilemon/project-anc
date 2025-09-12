@@ -130,6 +130,29 @@ def main(page: ft.Page):
 
         page.update()
 
+    def handle_close_tab(tab_to_close: ft.Tab):
+        """タブを閉じる処理（自動保存付き）"""
+        path = tab_to_close.content.data
+        content = tab_to_close.content.value
+        
+        # 1. ファイルを保存
+        handle_save_file(path, content)
+        
+        # 2. タブをリストから削除
+        app_ui.tabs.tabs.remove(tab_to_close)
+        
+        # 3. もし最後のタブが閉じられたら、Welcome画面を出す
+        if not app_ui.tabs.tabs:
+            app_ui.tabs.tabs.append(
+                ft.Tab(text="Welcome", content=ft.Column(
+                    [ft.Text("← サイドバーからファイルを選択してください", size=20)],
+                    alignment=ft.MainAxisAlignment.CENTER,
+                    horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                ))
+            )
+        
+        page.update()
+
     # AppUIのインスタンス作成時に、新しい on_cancel_tags を渡す
     app_ui = AppUI(
         page,
@@ -139,7 +162,8 @@ def main(page: ft.Page):
         on_refresh_files=handle_refresh_files,
         on_update_tags=handle_update_tags,
         on_cancel_tags=handle_cancel_tags, # 追加
-        on_rename_file=handle_rename_file # ★追加
+        on_rename_file=handle_rename_file, # ★追加
+        on_close_tab=handle_close_tab # ★追加
     )
     
     page.appbar = app_ui.appbar

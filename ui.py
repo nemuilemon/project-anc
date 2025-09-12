@@ -135,7 +135,7 @@ class FileListItem(ft.ListTile):
 
 
 class AppUI:
-    def __init__(self, page: ft.Page, on_open_file, on_save_file, on_analyze_tags, on_refresh_files, on_update_tags, on_cancel_tags, on_rename_file):
+    def __init__(self, page: ft.Page, on_open_file, on_save_file, on_analyze_tags, on_refresh_files, on_update_tags, on_cancel_tags, on_rename_file, on_close_tab):
         self.page = page
         self.on_open_file = on_open_file
         self.on_save_file = on_save_file
@@ -144,6 +144,7 @@ class AppUI:
         self.on_update_tags = on_update_tags
         self.on_cancel_tags = on_cancel_tags
         self.on_rename_file = on_rename_file
+        self.on_close_tab = on_close_tab
 
         self.tabs = ft.Tabs(selected_index=0, expand=True, tabs=[])
         self.file_list = ft.Column(scroll=ft.ScrollMode.AUTO, expand=True)
@@ -268,7 +269,22 @@ class AppUI:
                 return
 
         new_editor = ft.TextField(value=content, multiline=True, expand=True, data=path)
-        new_tab = ft.Tab(text=filename, content=new_editor)
+        
+        # Tabの参照を先に作っておく
+        new_tab = ft.Tab(content=new_editor)
+        
+        new_tab.tab_content = ft.Row(
+            spacing=5,
+            controls=[
+                ft.Text(filename),
+                ft.IconButton(
+                    icon=ft.Icons.CLOSE,
+                    icon_size=12,
+                    tooltip="Close file",
+                    on_click=lambda e: self.on_close_tab(new_tab),
+                )
+            ]
+        )
 
         if self.tabs.tabs and self.tabs.tabs[0].text == "Welcome":
             self.tabs.tabs[0] = new_tab
