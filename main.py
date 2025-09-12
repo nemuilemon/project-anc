@@ -5,6 +5,7 @@ from tinydb import TinyDB
 import config
 from ui import AppUI
 from logic import AppLogic
+from threading import Thread, Event # Eventを追加でインポート
 
 def main(page: ft.Page):
     page.title = "Project A.N.C. (Alice Nexus Core)"
@@ -13,6 +14,12 @@ def main(page: ft.Page):
     db = TinyDB(config.DB_FILE)
 
     app_logic = AppLogic(db)
+
+    # --- 状態管理用の変数を追加 ---
+    # 分析処理の実行状態を管理するフラグ
+    is_analyzing = False
+    # キャンセル命令をスレッドに伝えるためのイベントオブジェクト
+    cancel_event = Event()
 
     def handle_open_file(path: str):
         content = app_logic.read_file(path)
@@ -28,39 +35,67 @@ def main(page: ft.Page):
             app_ui.update_file_list(all_files)
             page.update()
 
+    def run_tag_analysis(path, content):
+        """AI分析を別スレッドで実行するためのラッパー関数"""
+        nonlocal is_analyzing # 外側のis_analyzing変数を変更できるようにする
+        
+        try:
+            # cancel_eventを渡す
+            success, message = app_logic.analyze_and_update_tags(path, content, cancel_event)
+            
+            # 分析完了をUIに通知
+            page.snack_bar = ft.SnackBar(content=ft.Text(message))
+            page.snack_bar.open = True
+            
+            # 成功したらファイルリストを更新
+            if success:
+                all_files = app_logic.get_file_list()
+                # UIの更新はpage.run()のスレッドで行う必要がある
+                page.run_thread(lambda: app_ui.update_file_list(all_files))
+            
+            page.update()
+        finally:
+            # 処理が完了したら、必ずフラグを戻し、UIを通常モードに戻す
+            is_analyzing = False
+            page.run_thread(app_ui.stop_analysis_view)
+
     def handle_analyze_tags(path: str, content: str):
+        nonlocal is_analyzing
+        
+        # すでに分析中なら、新しい分析を開始しない
+        if is_analyzing:
+            page.snack_bar = ft.SnackBar(content=ft.Text("現在、別の分析を実行中です。"))
+            page.snack_bar.open = True
+            page.update()
+            return
+
         if not path:
             page.snack_bar = ft.SnackBar(content=ft.Text("先にファイルを一度保存してください。"))
             page.snack_bar.open = True
             page.update()
             return
             
-        page.snack_bar = ft.SnackBar(content=ft.Text("AIが分析中です..."))
-        page.snack_bar.open = True
-        page.update()
+        # --- ここからが分析開始のメイン処理 ---
+        # 1. 分析中フラグを立てる
+        is_analyzing = True
+        # 2. キャンセルイベントをリセット（前のキャンセルが残らないように）
+        cancel_event.clear()
+        # 3. UIを「分析中」モードに変更
+        app_ui.start_analysis_view()
         
-        success, message = app_logic.analyze_and_update_tags(path, content)
-        
-        page.snack_bar = ft.SnackBar(content=ft.Text(message))
-        page.snack_bar.open = True
-        
-        if success:
-            all_files = app_logic.get_file_list()
-            app_ui.update_file_list(all_files)
-        
-        page.update()
+        # 4. バックグラウンドスレッドを開始
+        thread = Thread(target=run_tag_analysis, args=(path, content))
+        thread.start()
 
-    # 1. 新しい指揮官の追加：更新ボタンの命令を処理する
     def handle_refresh_files():
         """ファイルリストの更新命令を処理する"""
-        app_logic.sync_database() # DBを同期して
-        all_files = app_logic.get_file_list() # 最新のリストをもらって
-        app_ui.update_file_list(all_files) # UIに反映する
+        app_logic.sync_database()
+        all_files = app_logic.get_file_list()
+        app_ui.update_file_list(all_files)
         page.snack_bar = ft.SnackBar(content=ft.Text("ファイルリストを更新しました。"))
         page.snack_bar.open = True
         page.update()
 
-    # 1. 新しい指揮官の追加：タグ編集の命令を処理する
     def handle_update_tags(path: str, tags: list):
         """タグの手動更新命令を処理する"""
         success, message = app_logic.update_tags(path, tags)
@@ -69,36 +104,31 @@ def main(page: ft.Page):
         
         if success:
             all_files = app_logic.get_file_list()
-            app_ui.update_file_list(all_files) # UIを更新して変更を即時反映
+            app_ui.update_file_list(all_files)
 
         page.update()
 
-    # 2. 指揮系統の整理：使わなくなった検索の指揮官をコメントアウト
-    # def handle_search(keyword: str):
-    #     searched_files = app_logic.search_files(keyword)
-    #     app_ui.update_file_list(searched_files)
+    def handle_cancel_tags():
+        """分析のキャンセル命令を処理する"""
+        if is_analyzing:
+            print("Cancellation requested by user.")
+            cancel_event.set() # イベントをセットして、スレッドに伝える
 
-    # --- ★★★ここから下が、修正後の正しい順番だよ★★★ ---
-
-    # 1. 【先に】AppUIのインスタンス（UI部品）を作成する
+    # AppUIのインスタンス作成時に、新しい on_cancel_tags を渡す
     app_ui = AppUI(
         page,
         on_open_file=handle_open_file, 
         on_save_file=handle_save_file,
         on_analyze_tags=handle_analyze_tags,
         on_refresh_files=handle_refresh_files,
-        on_update_tags=handle_update_tags
+        on_update_tags=handle_update_tags,
+        on_cancel_tags=handle_cancel_tags # 追加
     )
     
-    # 2. AppBarを設定する
     page.appbar = app_ui.appbar
-
-    # 3. 【最後に】準備したUI部品を使って、画面全体を組み立てる
     page.add(app_ui.build())
 
-    # 4. 最初のファイルリストを読み込んで表示する
     initial_files = app_logic.get_file_list()
     app_ui.update_file_list(initial_files)
-
 
 ft.app(target=main)

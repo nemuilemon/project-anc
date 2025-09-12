@@ -78,15 +78,17 @@ class AppLogic:
             return False, None
 
     # analyze_and_update_tags関数を新しく追加
-    def analyze_and_update_tags(self, path, content):
+    def analyze_and_update_tags(self, path, content, cancel_event=None):
         """指定されたファイルの内容を分析し、タグをDBに保存する"""
         try:
-            tags = self._generate_tags_from_ollama(content)
+            tags = self._generate_tags_from_ollama(content, cancel_event)
             
-            # タグ分析に失敗した場合は何もしない
+            if "tag_cancelled" in tags:
+                return False, "分析を中止しました。"
+
             if not tags or "tag_error" in tags:
                  return False, "タグ分析に失敗しました。"
-
+            
             File = Query()
             self.db.update({'tags': tags}, File.path == path)
             return True, "タグを更新しました。"
@@ -95,22 +97,26 @@ class AppLogic:
             return False, "タグの更新中にエラーが発生しました。"
 
 
-    def _generate_tags_from_ollama(self,content):
+    def _generate_tags_from_ollama(self,content, cancel_event=None):
         """Ollamaに接続してコンテンツからタグを生成する（長文応答時に再試行するガードレール付き）"""
         if not content.strip():
             return []
 
-        # --- 変更点 ---
         # 1. 定数の設定
         MAX_TAGS_LENGTH = 100  # 許容する最大文字数
         MAX_RETRIES = 3        # 最大試行回数
         current_content = content # 繰り返し処理で利用する現在のテキスト
 
         for attempt in range(MAX_RETRIES):
+            #ループの開始時にキャンセルされていないかチェック
+            if cancel_event and cancel_event.is_set():
+                print("Cancellation detected. Stopping tag generation.")
+                return ["tag_cancelled"]
+            
             print(f"--- タグ生成試行: {attempt + 1}回目 ---")
             try:
                 prompt = f"""
-                以下の文章の主要なキーワードを3つから5つ、コンマ区切りで単語のみ抽出してください。
+                以下の文章の主要なキーワードを5つから8つ、コンマ区切りで単語のみ抽出してください。
                 出力例: "Python, Flet, データベース, AI"
                 文章:「{current_content}」
                 """

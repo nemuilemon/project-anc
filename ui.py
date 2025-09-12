@@ -84,17 +84,31 @@ class FileListItem(ft.ListTile):
 
 
 class AppUI:
-    def __init__(self, page: ft.Page, on_open_file, on_save_file, on_analyze_tags, on_refresh_files, on_update_tags):
+    def __init__(self, page: ft.Page, on_open_file, on_save_file, on_analyze_tags, on_refresh_files, on_update_tags, on_cancel_tags):
         self.page = page
         self.on_open_file = on_open_file
         self.on_save_file = on_save_file
         self.on_analyze_tags = on_analyze_tags
         self.on_refresh_files = on_refresh_files
         self.on_update_tags = on_update_tags
+        self.on_cancel_tags = on_cancel_tags
 
         self.tabs = ft.Tabs(selected_index=0, expand=True, tabs=[])
         self.file_list = ft.Column(scroll=ft.ScrollMode.AUTO, expand=True)
         
+        self.analyze_button = ft.ElevatedButton(
+            "Analyze Tags",
+            icon=ft.Icons.AUTO_AWESOME,
+            on_click=self.analyze_button_clicked
+        )
+        self.cancel_button = ft.ElevatedButton(
+            "Cancel",
+            icon=ft.Icons.CANCEL,
+            on_click=lambda e: self.on_cancel_tags(),
+            visible=False # 最初は隠しておく
+        )
+        self.progress_ring = ft.ProgressRing(visible=False) # 最初は隠しておく
+
         self.appbar = ft.AppBar(
             title=ft.Text("Project A.N.C."),
             actions=[
@@ -104,7 +118,9 @@ class AppUI:
                     on_click=lambda e: self.on_refresh_files()
                 ),
                 ft.ElevatedButton("Save", icon=ft.Icons.SAVE, on_click=self.save_button_clicked),
-                ft.ElevatedButton("Analyze Tags", icon=ft.Icons.AUTO_AWESOME, on_click=self.analyze_button_clicked)
+                self.progress_ring,
+                self.analyze_button,
+                self.cancel_button
             ]
         )
         
@@ -113,6 +129,22 @@ class AppUI:
             width=250, padding=10, bgcolor=ft.Colors.BLACK12
         )
 
+    def start_analysis_view(self):
+        """分析中のUI表示に切り替える"""
+        self.analyze_button.visible = False
+        self.progress_ring.visible = True
+        self.cancel_button.visible = True
+        self.page.update()
+
+
+    def stop_analysis_view(self):
+        """通常のUI表示に戻す"""
+        self.analyze_button.visible = True
+        self.progress_ring.visible = False
+        self.cancel_button.visible = False
+        self.page.update()
+
+        
     def analyze_button_clicked(self, e):
         active_tab = self.get_active_tab()
         if active_tab and hasattr(active_tab.content, 'data'):
