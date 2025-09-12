@@ -3,9 +3,22 @@ import os
 
 # --- New Approach: Inherit from a specific layout control (Flet >= 0.21.0) ---
 class FileListItem(ft.ListTile):
-    """
-    A custom control inheriting from ListTile to represent a file item.
-    It manages its own state (view vs. edit) by swapping its own controls.
+    """ファイルリスト項目を表すカスタムUIコンポーネント。
+    
+    ListTileを継承し、ファイル情報の表示とタグ編集機能を提供する。
+    表示モード（タグ表示 + ポップアップメニュー）と編集モード（タグ入力フィールド + 保存ボタン）
+    を動的に切り替えることができる。
+    
+    Attributes:
+        file_info (dict): ファイル情報辞書（title, path, tags, status, order_index）
+        editing (bool): 現在編集モードかどうかのフラグ
+        
+    Callbacks:
+        on_update_tags: タグ更新時のコールバック
+        on_open_file: ファイルオープン時のコールバック
+        on_rename_intent: ファイル名変更時のコールバック
+        on_archive_intent: アーカイブ操作時のコールバック
+        on_move_file: ファイル移動操作時のコールバック
     """
     def __init__(self, file_info, on_update_tags, on_open_file, on_rename_intent, on_archive_intent, on_move_file):
         super().__init__()
@@ -90,14 +103,22 @@ class FileListItem(ft.ListTile):
         self.set_view_mode() # Set initial controls
 
     def set_view_mode(self):
-        """Sets the control to display tags as text and show the menu button."""
+        """表示モードに切り替える。
+        
+        タグをテキスト表示し、ポップアップメニューボタンを表示する。
+        編集モードから表示モードに戻る際に使用される。
+        """
         self.subtitle = self.tags_text
         self.trailing = self.menu_button
         self.editing = False
         if self.page: self.update()
 
     def set_edit_mode(self):
-        """Sets the control to display a textfield for tags and show a save button."""
+        """編集モードに切り替える。
+        
+        タグ入力用のテキストフィールドを表示し、保存ボタンを表示する。
+        現在のタグ情報がテキストフィールドにプリセットされ、フォーカスが当たる。
+        """
         self.tags_field.value = ", ".join(self.file_info.get('tags', []))
         self.subtitle = self.tags_field
         self.trailing = self.save_button
@@ -176,6 +197,27 @@ class FileListItem(ft.ListTile):
 
 
 class AppUI:
+    """Project A.N.C.のメインユーザーインターフェースクラス。
+    
+    アプリケーションの全ユーザーインターフェース要素を管理し、
+    ユーザーの操作をビジネスロジック層への適切なコールバックに転送する。
+    
+    主要機能:
+    - タブベースのテキストエディタ
+    - ファイルリスト表示・管理
+    - AIタグ分析機能
+    - アーカイブ機能
+    - ファイル順序変更機能
+    
+    Attributes:
+        page (ft.Page): Fletページオブジェクト
+        tabs (ft.Tabs): メインのタブコンテナ
+        file_list_column (ft.Column): ファイルリスト表示用コンテナ
+        show_archived_switch (ft.Switch): アーカイブファイル表示切替
+    
+    Callbacks:
+        各操作に対応するコールバック関数群（on_open_file, on_save_file等）
+    """
     def __init__(self, page: ft.Page, on_open_file, on_save_file, on_analyze_tags, on_refresh_files, on_update_tags, on_cancel_tags, on_rename_file, on_close_tab, on_create_file, on_archive_file, on_update_order):
         self.page = page
         self.on_open_file = on_open_file
@@ -437,6 +479,16 @@ class AppUI:
         self.page.update()
 
     def update_file_list(self, files_info):
+        """ファイルリストUIを更新する。
+        
+        Args:
+            files_info (list): ファイル情報辞書のリスト。各辞書は
+                              title, path, tags, status, order_indexを含む。
+        
+        Note:
+            既存のリスト項目をすべてクリアしてから新しい項目を追加する。
+            アーカイブされたファイルは視覚的に区別される（グレー表示 + アーカイブアイコン）。
+        """
         self.file_list_column.controls.clear()
         if not files_info:
             self.file_list_column.controls.append(ft.Text("該当するメモがありません。"))
@@ -462,6 +514,16 @@ class AppUI:
         self.page.update()
 
     def add_or_focus_tab(self, path, content):
+        """指定されたファイルのタブを開くか、既存の場合はフォーカスする。
+        
+        Args:
+            path (str): ファイルの絶対パス
+            content (str): ファイルの内容
+        
+        Note:
+            同じファイルが既に開かれている場合は、そのタブにフォーカスを移す。
+            新しいファイルの場合は新しいタブを作成し、Welcomeタブがあれば削除する。
+        """
         filename = os.path.basename(path)
         for i, tab in enumerate(self.tabs.tabs):
             if hasattr(tab.content, 'data') and tab.content.data == path:

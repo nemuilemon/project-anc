@@ -10,7 +10,24 @@ class AppLogic:
         self.sync_database()
 
     def get_file_list(self, show_archived=False):
-        """ファイルリストを取得する。デフォルトではアクティブなファイルのみ、order_indexでソート"""
+        """ファイルリストを取得する。
+        
+        Args:
+            show_archived (bool): Trueの場合、アーカイブされたファイルも含める。
+                                 デフォルトはFalse（アクティブなファイルのみ）。
+        
+        Returns:
+            list: ファイル情報の辞書のリスト。各辞書は以下のキーを含む：
+                - title (str): ファイル名
+                - path (str): ファイルの絶対パス
+                - tags (list): タグのリスト
+                - status (str): ファイル状態 ('active' または 'archived')
+                - order_index (int): 表示順序（昇順でソート）
+        
+        Note:
+            レガシーファイルでstatusやorder_indexが未設定の場合、
+            それぞれ'active'と0として扱われる。
+        """
         if show_archived:
             # すべてのファイルを返す
             files = self.db.all()
@@ -26,7 +43,17 @@ class AppLogic:
 
     # 2. データベース同期機能：フォルダとDBを同期する新機能
     def sync_database(self):
-        """NOTES_DIRにあるmdファイルとDBを同期する"""
+        """ファイルシステムとデータベースを同期する。
+        
+        NOTES_DIR内の.mdファイルをスキャンし、データベースに登録されていない
+        新しいファイルを自動的に追加する。既存のDBレコードは変更しない。
+        
+        Raises:
+            FileNotFoundError: NOTES_DIRが存在しない場合は処理をスキップ
+        
+        Note:
+            新しいファイルのorder_indexは、既存の最大値+1が設定される。
+        """
         # フォルダにある実際のファイル一覧を取得
         try:
             actual_files = {os.path.join(config.NOTES_DIR, f) for f in os.listdir(config.NOTES_DIR) if f.endswith('.md')}
@@ -54,7 +81,17 @@ class AppLogic:
 
     # 3. 手動タグ更新機能：タグ情報を更新する新機能
     def update_tags(self, path, tags):
-        """指定されたファイルのタグを更新する"""
+        """指定されたファイルのタグを手動で更新する。
+        
+        Args:
+            path (str): 更新対象ファイルの絶対パス
+            tags (list): 新しいタグのリスト
+        
+        Returns:
+            tuple: (成功フラグ, メッセージ)
+                - bool: 更新が成功した場合True
+                - str: 結果メッセージ（成功/失敗）
+        """
         try:
             File = Query()
             self.db.update({'tags': tags}, File.path == path)
@@ -64,6 +101,18 @@ class AppLogic:
             return False, "タグの更新中にエラーが発生しました。"
 
     def read_file(self, path):
+        """ファイルの内容を読み取る。
+        
+        Args:
+            path (str): 読み取り対象ファイルの絶対パス
+        
+        Returns:
+            str or None: ファイルの内容（UTF-8）。エラーの場合はNone。
+        
+        Note:
+            ファイルが存在しない、アクセス権限がない等の場合はNoneを返し、
+            エラー内容はコンソールに出力される。
+        """
         try:
             with open(path, "r", encoding="utf-8") as f:
                 return f.read()
@@ -72,7 +121,21 @@ class AppLogic:
             return None
 
     def save_file(self, path, content):
-        """ファイル保存と、DBレコードの更新/作成を行う"""
+        """ファイル内容をディスクに保存し、データベースレコードを更新する。
+        
+        Args:
+            path (str): 保存先ファイルの絶対パス
+            content (str): 保存するテキスト内容
+        
+        Returns:
+            tuple: (成功フラグ, ファイル名またはNone)
+                - bool: 保存が成功した場合True
+                - str or None: 成功時はファイル名、失敗時はNone
+        
+        Note:
+            新しいファイルの場合は自動的にDBレコードを作成し、
+            既存ファイルの場合は既存の情報（タグ、ステータス等）を保持する。
+        """
         try:
             with open(path, "w", encoding="utf-8") as f:
                 f.write(content)
@@ -107,7 +170,22 @@ class AppLogic:
 
     # analyze_and_update_tags関数を新しく追加
     def analyze_and_update_tags(self, path, content, cancel_event=None):
-        """指定されたファイルの内容を分析し、タグをDBに保存する"""
+        """AI（Ollama）を使用してファイル内容を分析し、自動的にタグを生成・更新する。
+        
+        Args:
+            path (str): 分析対象ファイルの絶対パス
+            content (str): 分析するテキスト内容
+            cancel_event (threading.Event, optional): 処理をキャンセルするためのイベント
+        
+        Returns:
+            tuple: (成功フラグ, メッセージ)
+                - bool: 分析・更新が成功した場合True
+                - str: 結果メッセージ（成功/失敗/キャンセル）
+        
+        Note:
+            非同期処理で実行され、cancel_eventによりキャンセル可能。
+            Ollamaサーバーへの接続エラーやタイムアウトも適切に処理される。
+        """
         try:
             tags = self._generate_tags_from_ollama(content, cancel_event)
             
@@ -125,8 +203,21 @@ class AppLogic:
             return False, "タグの更新中にエラーが発生しました。"
 
 
-    def _generate_tags_from_ollama(self,content, cancel_event=None):
-        """Ollamaに接続してコンテンツからタグを生成する（長文応答時に再試行するガードレール付き）"""
+    def _generate_tags_from_ollama(self, content, cancel_event=None):
+        """Ollama AIモデルを使用してコンテンツからタグを生成する。
+        
+        Args:
+            content (str): タグ生成の対象となるテキスト内容
+            cancel_event (threading.Event, optional): 処理キャンセル用イベント
+        
+        Returns:
+            list: 生成されたタグのリスト。エラー時は["tag_error"]、
+                  キャンセル時は["tag_cancelled"]を返す。
+        
+        Note:
+            AIの応答が長すぎる場合（100文字超）は最大3回まで自動再試行する。
+            各試行の開始時にキャンセルチェックを行う。
+        """
         if not content.strip():
             return []
 
@@ -173,7 +264,23 @@ class AppLogic:
         return []
 
     def create_new_file(self, filename):
-        """新しい空の.mdファイルを作成し、DBにレコードを追加する"""
+        """新しい空のMarkdownファイルを作成し、データベースに登録する。
+        
+        Args:
+            filename (str): 作成するファイル名。拡張子(.md)は自動付与される。
+        
+        Returns:
+            tuple: (成功フラグ, メッセージ)
+                - bool: 作成が成功した場合True
+                - str: 結果メッセージ（成功/失敗理由）
+        
+        Raises:
+            既存ファイルと同名の場合は失敗を返す（上書きしない）
+        
+        Note:
+            作成されたファイルは自動的に最後の順序（最大order_index + 1）で
+            データベースに登録される。
+        """
         # 1. ファイル名の検証と正規化
         if not filename.strip():
             return False, "ファイル名を入力してください。"

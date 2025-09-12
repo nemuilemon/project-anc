@@ -8,6 +8,18 @@ from logic import AppLogic
 from threading import Thread, Event # Eventを追加でインポート
 
 def main(page: ft.Page):
+    """Project A.N.C.のメイン関数。
+    
+    アプリケーションの初期化、各コンポーネントの連携、
+    イベントハンドラの設定を行う。
+    
+    Args:
+        page (ft.Page): Fletページオブジェクト
+    
+    Note:
+        この関数はFletアプリケーションのエントリーポイントとして
+        ft.app()から呼び出される。
+    """
     page.title = "Project A.N.C. (Alice Nexus Core)"
     if not os.path.exists(config.NOTES_DIR):
         os.makedirs(config.NOTES_DIR)
