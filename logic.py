@@ -10,15 +10,19 @@ class AppLogic:
         self.sync_database()
 
     def get_file_list(self, show_archived=False):
-        """ファイルリストを取得する。デフォルトではアクティブなファイルのみ"""
+        """ファイルリストを取得する。デフォルトではアクティブなファイルのみ、order_indexでソート"""
         if show_archived:
             # すべてのファイルを返す
-            return self.db.all()
+            files = self.db.all()
         else:
             # アクティブなファイルのみ返す
             File = Query()
             # statusフィールドがないレガシーファイルはアクティブとして扱う
-            return self.db.search((File.status == 'active') | (~File.status.exists()))
+            files = self.db.search((File.status == 'active') | (~File.status.exists()))
+        
+        # order_indexでソート（order_indexがないファイルは0として扱う）
+        files.sort(key=lambda x: x.get('order_index', 0))
+        return files
 
     # 2. データベース同期機能：フォルダとDBを同期する新機能
     def sync_database(self):
@@ -36,11 +40,17 @@ class AppLogic:
         # フォルダにはあるけど、DBにないファイル（＝新しいファイル）を見つける
         new_files = actual_files - db_files
         
-        # 新しいファイルをDBに初期登録する
-        for path in new_files:
+        # 新しいファイルをDBに初期登録する（order_indexは最大値+1）
+        existing_max_order = 0
+        all_records = self.db.all()
+        if all_records:
+            existing_max_order = max([doc.get('order_index', 0) for doc in all_records])
+        
+        for i, path in enumerate(new_files):
             title = os.path.basename(path)
-            self.db.insert({'title': title, 'path': path, 'tags': [], 'status': 'active'})
-            print(f"New file found and added to DB: {title}")
+            order_index = existing_max_order + i + 1
+            self.db.insert({'title': title, 'path': path, 'tags': [], 'status': 'active', 'order_index': order_index})
+            print(f"New file found and added to DB: {title} (order: {order_index})")
 
     # 3. 手動タグ更新機能：タグ情報を更新する新機能
     def update_tags(self, path, tags):
@@ -75,10 +85,19 @@ class AppLogic:
             # 既存の値があればそれを使い、なければデフォルト値を使う
             existing_tags = doc.get('tags', []) if doc else []
             existing_status = doc.get('status', 'active') if doc else 'active'
+            existing_order_index = doc.get('order_index', 0) if doc else 0
+            
+            # 新しいファイルの場合は order_index を設定
+            if not doc:
+                all_records = self.db.all()
+                if all_records:
+                    existing_order_index = max([d.get('order_index', 0) for d in all_records]) + 1
+                else:
+                    existing_order_index = 1
             
             # upsertを使って、ドキュメントを更新または新規作成する
             self.db.upsert(
-                {'title': title, 'path': path, 'tags': existing_tags, 'status': existing_status},
+                {'title': title, 'path': path, 'tags': existing_tags, 'status': existing_status, 'order_index': existing_order_index},
                 File.path == path
             )
             return True, title
@@ -174,12 +193,19 @@ class AppLogic:
             with open(full_path, "w", encoding="utf-8") as f:
                 f.write("")
             
-            # 5. データベースにレコードを追加
+            # 5. データベースにレコードを追加（order_indexは最大値+1）
+            existing_max_order = 0
+            all_records = self.db.all()
+            if all_records:
+                existing_max_order = max([doc.get('order_index', 0) for doc in all_records])
+            
+            order_index = existing_max_order + 1
             self.db.insert({
                 'title': filename,
                 'path': full_path,
                 'tags': [],
-                'status': 'active'
+                'status': 'active',
+                'order_index': order_index
             })
             
             return True, f"新しいファイル「{filename}」を作成しました。"
@@ -281,6 +307,32 @@ class AppLogic:
             if os.path.exists(active_path):
                 os.rename(active_path, file_path)
             return False, "ファイルのアーカイブ解除中にエラーが発生しました。"
+
+    def update_file_order(self, ordered_paths):
+        """ファイルの新しい順番を受け取り、order_indexをデータベースで更新する"""
+        try:
+            print(f"Updating file order for {len(ordered_paths)} files")  # Debug
+            File = Query()
+            
+            # 各パスに対して新しい order_index を設定
+            for new_index, path in enumerate(ordered_paths, start=1):
+                print(f"Setting order_index {new_index} for {path}")  # Debug
+                # パスに対応するファイルの order_index を更新
+                updated_count = self.db.update(
+                    {'order_index': new_index},
+                    File.path == path
+                )
+                
+                if updated_count == 0:
+                    print(f"Warning: File not found in DB for path: {path}")
+                else:
+                    print(f"Updated {updated_count} records for {path}")  # Debug
+            
+            print("File order update completed successfully")  # Debug
+            return True, "ファイルの順番を更新しました。"
+        except Exception as e:
+            print(f"Error updating file order: {e}")
+            return False, "ファイル順番の更新中にエラーが発生しました。"
 
     # 4. 指揮系統の整理：使わなくなった検索機能を一旦コメントアウト
     # def search_files(self, keyword):

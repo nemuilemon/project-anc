@@ -219,6 +219,28 @@ def main(page: ft.Page):
         
         page.update()
 
+    def handle_update_order(ordered_paths: list):
+        """ファイルの順番更新命令を処理する"""
+        print(f"Handle update order called with: {len(ordered_paths)} files")  # Debug
+        success, message = app_logic.update_file_order(ordered_paths)
+        print(f"Update order result: {success}, {message}")  # Debug
+        
+        if success:
+            # ファイルリストを更新（現在の表示状態を保持）
+            show_archived = app_ui.show_archived_switch.value
+            all_files = app_logic.get_file_list(show_archived=show_archived)
+            app_ui.update_file_list(all_files)
+            
+            # 成功メッセージを表示
+            page.snack_bar = ft.SnackBar(content=ft.Text(message))
+            page.snack_bar.open = True
+        else:
+            # エラーメッセージを表示
+            page.snack_bar = ft.SnackBar(content=ft.Text(message))
+            page.snack_bar.open = True
+        
+        page.update()
+
     # AppUIのインスタンス作成時に、新しい on_cancel_tags を渡す
     app_ui = AppUI(
         page,
@@ -231,7 +253,8 @@ def main(page: ft.Page):
         on_rename_file=handle_rename_file, # ★追加
         on_close_tab=handle_close_tab, # ★追加
         on_create_file=handle_create_file, # ★追加
-        on_archive_file=handle_archive_file # ★追加
+        on_archive_file=handle_archive_file, # ★追加
+        on_update_order=handle_update_order # ★追加
     )
     
     page.appbar = app_ui.appbar

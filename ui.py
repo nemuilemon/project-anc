@@ -7,7 +7,7 @@ class FileListItem(ft.ListTile):
     A custom control inheriting from ListTile to represent a file item.
     It manages its own state (view vs. edit) by swapping its own controls.
     """
-    def __init__(self, file_info, on_update_tags, on_open_file, on_rename_intent, on_archive_intent):
+    def __init__(self, file_info, on_update_tags, on_open_file, on_rename_intent, on_archive_intent, on_move_file):
         super().__init__()
 
         self.file_info = file_info
@@ -15,6 +15,7 @@ class FileListItem(ft.ListTile):
         self.on_open_file = on_open_file
         self.on_rename_intent = on_rename_intent
         self.on_archive_intent = on_archive_intent
+        self.on_move_file = on_move_file
         self.editing = False
 
         # --- Define all controls that will be used/swapped ---
@@ -61,6 +62,20 @@ class FileListItem(ft.ListTile):
                 on_click=self.archive_intent_clicked
             ))
         
+        # 順番変更用のメニュー項目を追加
+        menu_items.extend([
+            ft.PopupMenuItem(
+                text="Move to top",
+                icon=ft.Icons.KEYBOARD_ARROW_UP,
+                on_click=self.move_to_top_clicked
+            ),
+            ft.PopupMenuItem(
+                text="Move to bottom", 
+                icon=ft.Icons.KEYBOARD_ARROW_DOWN,
+                on_click=self.move_to_bottom_clicked
+            )
+        ])
+        
         self.menu_button = ft.PopupMenuButton(items=menu_items)
 
         self.save_button = ft.IconButton(
@@ -99,6 +114,12 @@ class FileListItem(ft.ListTile):
     
     def archive_intent_clicked(self, e):
         self.on_archive_intent(self.file_info)
+    
+    def move_to_top_clicked(self, e):
+        self.on_move_file('top', self.file_info)
+    
+    def move_to_bottom_clicked(self, e):
+        self.on_move_file('bottom', self.file_info)
 
     def rename_clicked(self, e):
         """Shows a dialog to get a new file name."""
@@ -155,7 +176,7 @@ class FileListItem(ft.ListTile):
 
 
 class AppUI:
-    def __init__(self, page: ft.Page, on_open_file, on_save_file, on_analyze_tags, on_refresh_files, on_update_tags, on_cancel_tags, on_rename_file, on_close_tab, on_create_file, on_archive_file):
+    def __init__(self, page: ft.Page, on_open_file, on_save_file, on_analyze_tags, on_refresh_files, on_update_tags, on_cancel_tags, on_rename_file, on_close_tab, on_create_file, on_archive_file, on_update_order):
         self.page = page
         self.on_open_file = on_open_file
         self.on_save_file = on_save_file
@@ -167,9 +188,12 @@ class AppUI:
         self.on_close_tab = on_close_tab
         self.on_create_file = on_create_file
         self.on_archive_file = on_archive_file
-
+        self.on_update_order = on_update_order
+        
         self.tabs = ft.Tabs(selected_index=0, expand=True, tabs=[])
-        self.file_list = ft.Column(scroll=ft.ScrollMode.AUTO, expand=True)
+        # ファイルリスト用のコンテナ
+        self.file_list_column = ft.Column(scroll=ft.ScrollMode.AUTO, expand=True)
+        self.file_list = self.file_list_column
         
         # アーカイブファイル表示切替スイッチ
         self.show_archived_switch = ft.Switch(
@@ -320,6 +344,38 @@ class AppUI:
     def handle_archive_intent(self, file_info):
         """アーカイブ操作の意図を受け取り処理する"""
         self.on_archive_file(file_info['path'])
+    
+    def handle_move_file(self, direction, file_info):
+        """ファイルの移動操作を処理する"""
+        print(f"Moving file {file_info['title']} to {direction}")  # Debug
+        
+        # 現在のファイル一覧を取得
+        current_files = []
+        for control in self.file_list_column.controls:
+            if hasattr(control, 'file_info'):
+                current_files.append(control.file_info)
+        
+        # ファイルの新しい位置を計算
+        target_file_path = file_info['path']
+        new_order = []
+        target_file = None
+        
+        # 対象ファイルを除いたリストを作成
+        for f in current_files:
+            if f['path'] == target_file_path:
+                target_file = f
+            else:
+                new_order.append(f)
+        
+        if target_file:
+            if direction == 'top':
+                new_order.insert(0, target_file)  # 最初に挿入
+            elif direction == 'bottom':
+                new_order.append(target_file)  # 最後に追加
+            
+            # 新しい順番を更新
+            ordered_paths = [f['path'] for f in new_order]
+            self.on_update_order(ordered_paths)
 
     def new_file_button_clicked(self, e):
         """Shows a custom modal dialog to get a filename for the new file."""
@@ -381,9 +437,9 @@ class AppUI:
         self.page.update()
 
     def update_file_list(self, files_info):
-        self.file_list.controls.clear()
+        self.file_list_column.controls.clear()
         if not files_info:
-            self.file_list.controls.append(ft.Text("該当するメモがありません。"))
+            self.file_list_column.controls.append(ft.Text("該当するメモがありません。"))
         else:
             for info in files_info:
                 list_item = FileListItem(
@@ -391,7 +447,8 @@ class AppUI:
                     on_update_tags=self.on_update_tags,
                     on_open_file=self.on_open_file,
                     on_rename_intent=self.handle_rename_intent,
-                    on_archive_intent=self.handle_archive_intent
+                    on_archive_intent=self.handle_archive_intent,
+                    on_move_file=self.handle_move_file
                 )
                 
                 # アーカイブされたファイルの視覚的区別
@@ -401,7 +458,7 @@ class AppUI:
                     # アーカイブアイコンを追加
                     list_item.leading = ft.Icon(ft.Icons.ARCHIVE, color=ft.Colors.GREY_600)
                 
-                self.file_list.controls.append(list_item)
+                self.file_list_column.controls.append(list_item)
         self.page.update()
 
     def add_or_focus_tab(self, path, content):
