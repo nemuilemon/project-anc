@@ -18,3 +18,8 @@ cleanup.py
 # agent
 agent.md
 log.md
+
+# build
+build/
+dist/
+ProjectANC.spec
