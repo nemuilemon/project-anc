@@ -2,7 +2,10 @@
   "permissions": {
     "allow": [
       "Bash(python:*)",
-      "Bash(del test_create_file.py)"
+      "Bash(del test_create_file.py)",
+      "Bash(source:*)",
+      "Bash(.venv/Scripts/activate)",
+      "Bash(git add:*)"
     ],
     "deny": [],
     "ask": []
