@@ -95,33 +95,48 @@ class AppLogic:
             return False, "タグの更新中にエラーが発生しました。"
 
 
-    def _generate_tags_from_ollama(self, content):
-        """Ollamaに接続してコンテンツからタグを生成する（ガードレール付き）"""
+    def _generate_tags_from_ollama(self,content):
+        """Ollamaに接続してコンテンツからタグを生成する（長文応答時に再試行するガードレール付き）"""
         if not content.strip():
             return []
-        try:
-            prompt = f"""
-            以下の文章の主要なキーワードを3つから5つ、コンマ区切りで単語のみ抽出してください。
-            出力例: "Python, Flet, データベース, AI"
-            文章:「{content}」
-            """
-            response = ollama.generate(
-                model=config.OLLAMA_MODEL,
-                prompt=prompt
-            )
-            tags_string = response['response'].strip()
 
-            MAX_TAGS_LENGTH = 100
-            if len(tags_string) > MAX_TAGS_LENGTH:
-                print(f"AIの応答が長すぎるため、タグ付けをスキップしました。({len(tags_string)}文字)")
-                return []
-            
-            tags = [tag.strip() for tag in tags_string.split(',') if tag.strip()]
-            print(f"AIが生成したタグ: {tags}")
-            return tags
-        except Exception as e:
-            print(f"Ollamaへの接続エラー: {e}")
-            return ["tag_error"]
+        # --- 変更点 ---
+        # 1. 定数の設定
+        MAX_TAGS_LENGTH = 100  # 許容する最大文字数
+        MAX_RETRIES = 3        # 最大試行回数
+        current_content = content # 繰り返し処理で利用する現在のテキスト
+
+        for attempt in range(MAX_RETRIES):
+            print(f"--- タグ生成試行: {attempt + 1}回目 ---")
+            try:
+                prompt = f"""
+                以下の文章の主要なキーワードを3つから5つ、コンマ区切りで単語のみ抽出してください。
+                出力例: "Python, Flet, データベース, AI"
+                文章:「{current_content}」
+                """
+                response = ollama.generate(
+                    model=config.OLLAMA_MODEL,
+                    prompt=prompt
+                )
+                tags_string = response['response'].strip()
+
+                # 2. 成功条件のチェック
+                if len(tags_string) <= MAX_TAGS_LENGTH:
+                    tags = [tag.strip() for tag in tags_string.split(',') if tag.strip()]
+                    print(f"AIが生成したタグ (成功): {tags}")
+                    return tags # 成功したので、結果を返して処理を終了
+
+                # 3. 失敗（長文応答）時の処理
+                print(f"AIの応答が長すぎます ({len(tags_string)}文字)。応答内容を元に再試行します。")
+                current_content = tags_string # 帰ってきた長文を次の入力にする
+
+            except Exception as e:
+                print(f"Ollamaへの接続エラー: {e}")
+                return ["tag_error"]
+
+        # 4. 最大試行回数を超えた場合の処理
+        print(f"最大試行回数({MAX_RETRIES}回)を超えました。タグ付けをスキップします。")
+        return []
 
     # 4. 指揮系統の整理：使わなくなった検索機能を一旦コメントアウト
     # def search_files(self, keyword):
