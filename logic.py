@@ -1,17 +1,37 @@
 # logic.py
 import os
+import time
 from tinydb import Query
 import config
-import ollama
 from security import sanitize_filename, validate_file_path, safe_file_operation, create_safe_directory, SecurityError
 from async_operations import async_manager, ProgressTracker, run_with_progress
+
+# Import new AI analysis system
+from ai_analysis import AIAnalysisManager, TaggingPlugin, SummarizationPlugin, SentimentPlugin
 
 class AppLogic:
     def __init__(self, db):
         self.db = db
         # Define allowed directories for security validation
         self.allowed_dirs = [config.NOTES_DIR, config.ARCHIVE_DIR]
+        
+        # Initialize AI analysis system
+        self.ai_manager = AIAnalysisManager()
+        self._setup_ai_plugins()
+        
         self.sync_database()
+    
+    def _setup_ai_plugins(self):
+        """Initialize and register AI analysis plugins."""
+        try:
+            # Register core analysis plugins
+            self.ai_manager.register_plugin(TaggingPlugin())
+            self.ai_manager.register_plugin(SummarizationPlugin())
+            self.ai_manager.register_plugin(SentimentPlugin())
+            
+            print(f"Registered {len(self.ai_manager.get_available_plugins())} AI analysis plugins")
+        except Exception as e:
+            print(f"Error setting up AI plugins: {e}")
 
     def get_file_list(self, show_archived=False):
         """ファイルリストを取得する。
@@ -229,9 +249,9 @@ class AppLogic:
             print(f"Error saving file: {e}")
             return False, None
 
-    # analyze_and_update_tags関数を新しく追加
+    # analyze_and_update_tags関数を新しいAI分析システムで置き換え
     def analyze_and_update_tags(self, path, content, cancel_event=None):
-        """AI（Ollama）を使用してファイル内容を分析し、自動的にタグを生成・更新する。
+        """AI分析システムを使用してファイル内容を分析し、自動的にタグを生成・更新する。
         
         Args:
             path (str): 分析対象ファイルの絶対パス
@@ -244,85 +264,78 @@ class AppLogic:
                 - str: 結果メッセージ（成功/失敗/キャンセル）
         
         Note:
-            非同期処理で実行され、cancel_eventによりキャンセル可能。
-            Ollamaサーバーへの接続エラーやタイムアウトも適切に処理される。
+            新しいモジュラーAI分析システムを使用し、プラグインベースでタグ分析を実行。
         """
         try:
-            tags = self._generate_tags_from_ollama(content, cancel_event)
+            # Use new AI analysis system
+            result = self.ai_manager.analyze(content, "tagging")
             
-            if "tag_cancelled" in tags:
-                return False, "分析を中止しました。"
-
-            if not tags or "tag_error" in tags:
-                 return False, "タグ分析に失敗しました。"
+            if not result.success:
+                return False, result.message
             
+            # Extract tags from result
+            tags = result.data.get("tags", [])
+            
+            # Update database with new tags
             File = Query()
             self.db.update({'tags': tags}, File.path == path)
-            return True, "タグを更新しました。"
+            return True, result.message
+            
         except Exception as e:
             print(f"Error analyzing and updating tags: {e}")
             return False, "タグの更新中にエラーが発生しました。"
 
 
-    def _generate_tags_from_ollama(self, content, cancel_event=None):
-        """Ollama AIモデルを使用してコンテンツからタグを生成する。
+    def run_ai_analysis(self, content: str, analysis_type: str, **kwargs) -> dict:
+        """新しいAI分析システムを使用してコンテンツを分析する。
         
         Args:
-            content (str): タグ生成の対象となるテキスト内容
-            cancel_event (threading.Event, optional): 処理キャンセル用イベント
+            content (str): 分析対象のテキスト内容
+            analysis_type (str): 分析タイプ ("tagging", "summarization", "sentiment")
+            **kwargs: 分析タイプ固有のパラメータ
         
         Returns:
-            list: 生成されたタグのリスト。エラー時は["tag_error"]、
-                  キャンセル時は["tag_cancelled"]を返す。
+            dict: 分析結果の辞書 (success, data, message, processing_time等)
         
         Note:
-            AIの応答が長すぎる場合（100文字超）は最大3回まで自動再試行する。
-            各試行の開始時にキャンセルチェックを行う。
+            新しいモジュラーAI分析システムのエントリーポイント。
+            各種AI分析プラグインへの統一インターフェースを提供。
         """
-        if not content.strip():
-            return []
-
-        # 1. 定数の設定
-        MAX_TAGS_LENGTH = 100  # 許容する最大文字数
-        MAX_RETRIES = 3        # 最大試行回数
-        current_content = content # 繰り返し処理で利用する現在のテキスト
-
-        for attempt in range(MAX_RETRIES):
-            #ループの開始時にキャンセルされていないかチェック
-            if cancel_event and cancel_event.is_set():
-                print("Cancellation detected. Stopping tag generation.")
-                return ["tag_cancelled"]
-            
-            print(f"--- タグ生成試行: {attempt + 1}回目 ---")
-            try:
-                prompt = f"""
-                以下の文章の主要なキーワードを5つから8つ、コンマ区切りで単語のみ抽出してください。
-                出力例: "Python, Flet, データベース, AI"
-                文章:「{current_content}」
-                """
-                response = ollama.generate(
-                    model=config.OLLAMA_MODEL,
-                    prompt=prompt
-                )
-                tags_string = response['response'].strip()
-
-                # 2. 成功条件のチェック
-                if len(tags_string) <= MAX_TAGS_LENGTH:
-                    tags = [tag.strip() for tag in tags_string.split(',') if tag.strip()]
-                    print(f"AIが生成したタグ (成功): {tags}")
-                    return tags # 成功したので、結果を返して処理を終了
-
-                # 3. 失敗（長文応答）時の処理
-                print(f"AIの応答が長すぎます ({len(tags_string)}文字)。応答内容を元に再試行します。")
-                current_content = tags_string # 帰ってきた長文を次の入力にする
-
-            except Exception as e:
-                print(f"Ollamaへの接続エラー: {e}")
-                return ["tag_error"]
-
-        # 4. 最大試行回数を超えた場合の処理
-        print(f"最大試行回数({MAX_RETRIES}回)を超えました。タグ付けをスキップします。")
-        return []
+        try:
+            result = self.ai_manager.analyze(content, analysis_type, **kwargs)
+            return {
+                "success": result.success,
+                "data": result.data,
+                "message": result.message,
+                "processing_time": result.processing_time,
+                "plugin_name": result.plugin_name,
+                "metadata": result.metadata
+            }
+        except Exception as e:
+            from log_utils import log_error
+            log_error(f"AI analysis failed for analysis_type '{analysis_type}': {e}")
+            print(f"Error in AI analysis: {e}")
+            return {
+                "success": False,
+                "data": {},
+                "message": f"分析中にエラーが発生しました: {str(e)}",
+                "processing_time": 0,
+                "plugin_name": analysis_type,
+                "metadata": {"error": str(e)}
+            }
+    
+    def get_available_ai_functions(self) -> list:
+        """利用可能なAI分析機能の一覧を取得する。
+        
+        Returns:
+            list: AI分析プラグインの情報リスト
+        """
+        functions = []
+        for plugin_name in self.ai_manager.get_available_plugins():
+            plugin_info = self.ai_manager.get_plugin_info(plugin_name)
+            if plugin_info:
+                functions.append(plugin_info)
+        return functions
 
     def create_new_file(self, filename):
         """新しい空のMarkdownファイルを作成し、データベースに登録する。
@@ -792,7 +805,7 @@ class AppLogic:
         )
 
     def analyze_and_update_tags_async(self, path: str, content: str, progress_callback=None, completion_callback=None, error_callback=None, cancel_event=None) -> str:
-        """AI分析を非同期で実行する（UI凍結防止）。
+        """AI分析を非同期で実行する（UI凍結防止）- 新AI分析システム使用。
         
         Args:
             path (str): 分析対象ファイルの絶対パス
@@ -810,28 +823,99 @@ class AppLogic:
                 progress_callback(10)  # Starting analysis
             
             try:
-                tags = self._generate_tags_from_ollama(content, cancel_event)
+                # Use new AI analysis system with async support
+                result = self.ai_manager.analyze_async(
+                    content, 
+                    "tagging", 
+                    progress_callback=progress_callback,
+                    cancel_event=cancel_event
+                )
+                
+                if not result.success:
+                    return False, result.message
+                
+                # Extract tags from result
+                tags = result.data.get("tags", [])
                 
                 if progress_callback:
-                    progress_callback(80)  # Analysis complete, updating DB
+                    progress_callback(90)  # Analysis complete, updating DB
                 
-                if "tag_cancelled" in tags:
-                    return False, "分析を中止しました。"
-
-                if not tags or "tag_error" in tags:
-                    return False, "タグ分析に失敗しました。"
-                
+                # Update database with new tags
                 File = Query()
                 self.db.update({'tags': tags}, File.path == path)
                 
                 if progress_callback:
                     progress_callback(100)  # Complete
                 
-                return True, "タグを更新しました。"
+                return True, result.message
                 
             except Exception as e:
                 print(f"Error analyzing and updating tags: {e}")
                 return False, "タグの更新中にエラーが発生しました。"
+        
+        return async_manager.run_async_operation(
+            _async_analyze,
+            progress_callback=progress_callback,
+            completion_callback=completion_callback,
+            error_callback=error_callback
+        )
+    
+    def run_ai_analysis_async(self, path: str, content: str, analysis_type: str, 
+                             progress_callback=None, completion_callback=None, 
+                             error_callback=None, cancel_event=None, **kwargs) -> str:
+        """任意のAI分析を非同期で実行し、結果をデータベースに保存する。
+        
+        Args:
+            path (str): 分析対象ファイルの絶対パス
+            content (str): 分析するテキスト内容
+            analysis_type (str): 分析タイプ ("tagging", "summarization", "sentiment")
+            progress_callback (Callable, optional): 進捗更新コールバック
+            completion_callback (Callable, optional): 完了時コールバック
+            error_callback (Callable, optional): エラー時コールバック
+            cancel_event (threading.Event, optional): キャンセル用イベント
+            **kwargs: 分析タイプ固有のパラメータ
+        
+        Returns:
+            str: 操作ID（非同期操作の追跡用）
+        """
+        def _async_analyze():
+            if progress_callback:
+                progress_callback(10)
+            
+            try:
+                result = self.ai_manager.analyze_async(
+                    content,
+                    analysis_type,
+                    progress_callback=progress_callback,
+                    cancel_event=cancel_event,
+                    **kwargs
+                )
+                
+                if progress_callback:
+                    progress_callback(90)
+                
+                # Store analysis results in database metadata
+                if result.success and analysis_type != "tagging":
+                    File = Query()
+                    doc = self.db.get(File.path == path)
+                    if doc:
+                        # Add analysis results to document metadata
+                        analysis_data = doc.get("ai_analysis", {})
+                        analysis_data[analysis_type] = {
+                            "data": result.data,
+                            "timestamp": time.time(),
+                            "processing_time": result.processing_time
+                        }
+                        self.db.update({"ai_analysis": analysis_data}, File.path == path)
+                
+                if progress_callback:
+                    progress_callback(100)
+                
+                return result.success, result.message
+                
+            except Exception as e:
+                print(f"Error in async AI analysis: {e}")
+                return False, f"分析中にエラーが発生しました: {str(e)}"
         
         return async_manager.run_async_operation(
             _async_analyze,

@@ -195,8 +195,10 @@ class AppHandlers:
             self.page.update()
         
         def error_callback(error):
+            from log_utils import log_error
             self.is_analyzing = False
             self.app_ui.stop_analysis_view()
+            log_error(f"Tag analysis failed for file {path}: {error}")
             print(f"Error in AI analysis: {error}")
             self.page.snack_bar = ft.SnackBar(content=ft.Text(f"分析エラー: {str(error)}"))
             self.page.snack_bar.open = True
@@ -206,6 +208,89 @@ class AppHandlers:
         self.app_logic.analyze_and_update_tags_async(
             path,
             content,
+            progress_callback=progress_callback,
+            completion_callback=completion_callback,
+            error_callback=error_callback,
+            cancel_event=self.cancel_event
+        )
+    
+    def handle_ai_analysis(self, path: str, content: str, analysis_type: str):
+        """AI分析処理のハンドラ（新しいモジュラーシステム用）"""
+        # すでに分析中なら、新しい分析を開始しない
+        if self.is_analyzing:
+            self.page.snack_bar = ft.SnackBar(content=ft.Text("現在、別の分析を実行中です。"))
+            self.page.snack_bar.open = True
+            self.page.update()
+            return
+
+        if not path:
+            self.page.snack_bar = ft.SnackBar(content=ft.Text("先にファイルを一度保存してください。"))
+            self.page.snack_bar.open = True
+            self.page.update()
+            return
+        
+        # 分析開始
+        self.is_analyzing = True
+        self.cancel_event.clear()
+        self.app_ui.start_analysis_view()
+        
+        # 分析タイプに応じたメッセージ
+        analysis_messages = {
+            "summarization": "Generating summary...",
+            "sentiment": "Analyzing sentiment...",
+            "tagging": "Extracting tags..."
+        }
+        
+        self.app_ui.show_progress_indicators(
+            analysis_messages.get(analysis_type, "Processing AI analysis..."), 
+            True
+        )
+        
+        def progress_callback(progress):
+            status_messages = {
+                10: f"Starting {analysis_type} analysis...",
+                50: "Processing content...",
+                80: "Finalizing results...",
+                100: "Analysis complete!"
+            }
+            status = next((msg for p, msg in status_messages.items() if progress >= p), f"Analyzing... {progress}%")
+            self.app_ui.update_progress(progress, status)
+        
+        def completion_callback(result):
+            self.is_analyzing = False
+            self.app_ui.stop_analysis_view()
+            
+            success, message = result
+            if success:
+                # 結果を取得して表示
+                analysis_result = self.app_logic.run_ai_analysis(content, analysis_type)
+                if analysis_result["success"]:
+                    # 結果表示ダイアログを表示
+                    self.app_ui.show_ai_analysis_results(analysis_type, analysis_result["data"])
+                else:
+                    self.page.snack_bar = ft.SnackBar(content=ft.Text(analysis_result["message"]))
+                    self.page.snack_bar.open = True
+            else:
+                self.page.snack_bar = ft.SnackBar(content=ft.Text(message))
+                self.page.snack_bar.open = True
+            
+            self.page.update()
+        
+        def error_callback(error):
+            from log_utils import log_error
+            self.is_analyzing = False
+            self.app_ui.stop_analysis_view()
+            log_error(f"AI analysis ({analysis_type}) failed for file {path}: {error}")
+            print(f"Error in AI analysis: {error}")
+            self.page.snack_bar = ft.SnackBar(content=ft.Text(f"分析エラー: {str(error)}"))
+            self.page.snack_bar.open = True
+            self.page.update()
+        
+        # 新しいAI分析システムを使用
+        self.app_logic.run_ai_analysis_async(
+            path,
+            content,
+            analysis_type,
             progress_callback=progress_callback,
             completion_callback=completion_callback,
             error_callback=error_callback,

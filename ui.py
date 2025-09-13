@@ -22,7 +22,7 @@ class FileListItem(ft.ListTile):
         on_move_file: ファイル移動操作時のコールバック
         on_delete_intent: ファイル削除時のコールバック
     """
-    def __init__(self, file_info, on_update_tags, on_open_file, on_rename_intent, on_archive_intent, on_move_file, on_delete_intent):
+    def __init__(self, file_info, on_update_tags, on_open_file, on_rename_intent, on_archive_intent, on_move_file, on_delete_intent, on_ai_analysis=None):
         super().__init__()
 
         self.file_info = file_info
@@ -32,6 +32,7 @@ class FileListItem(ft.ListTile):
         self.on_archive_intent = on_archive_intent
         self.on_move_file = on_move_file
         self.on_delete_intent = on_delete_intent
+        self.on_ai_analysis = on_ai_analysis
         self.editing = False
 
         # --- Define all controls that will be used/swapped ---
@@ -60,6 +61,17 @@ class FileListItem(ft.ListTile):
                 text="Edit tags",
                 icon=ft.Icons.EDIT,
                 on_click=self.edit_clicked
+            ),
+            ft.PopupMenuItem(),  # Separator
+            ft.PopupMenuItem(
+                text="Generate Summary",
+                icon=ft.Icons.SUMMARIZE,
+                on_click=lambda e: self.ai_analysis_clicked("summarization")
+            ),
+            ft.PopupMenuItem(
+                text="Analyze Sentiment",
+                icon=ft.Icons.SENTIMENT_SATISFIED,
+                on_click=lambda e: self.ai_analysis_clicked("sentiment")
             ),
         ]
         
@@ -153,6 +165,11 @@ class FileListItem(ft.ListTile):
     
     def delete_intent_clicked(self, e):
         self.on_delete_intent(self.file_info)
+    
+    def ai_analysis_clicked(self, analysis_type):
+        """AI分析を実行するコールバック"""
+        if self.on_ai_analysis:
+            self.on_ai_analysis(self.file_info['path'], analysis_type)
 
     def rename_clicked(self, e):
         """Shows a dialog to get a new file name."""
@@ -230,7 +247,7 @@ class AppUI:
     Callbacks:
         各操作に対応するコールバック関数群（on_open_file, on_save_file等）
     """
-    def __init__(self, page: ft.Page, on_open_file, on_save_file, on_analyze_tags, on_refresh_files, on_update_tags, on_cancel_tags, on_rename_file, on_close_tab, on_create_file, on_archive_file, on_update_order, on_delete_file):
+    def __init__(self, page: ft.Page, on_open_file, on_save_file, on_analyze_tags, on_refresh_files, on_update_tags, on_cancel_tags, on_rename_file, on_close_tab, on_create_file, on_archive_file, on_update_order, on_delete_file, on_run_ai_analysis=None):
         self.page = page
         self.on_open_file = on_open_file
         self.on_save_file = on_save_file
@@ -238,6 +255,7 @@ class AppUI:
         self.on_refresh_files = on_refresh_files
         self.on_update_tags = on_update_tags
         self.on_cancel_tags = on_cancel_tags
+        self.on_run_ai_analysis = on_run_ai_analysis
         self.on_rename_file = on_rename_file
         self.on_close_tab = on_close_tab
         self.on_create_file = on_create_file
@@ -255,6 +273,20 @@ class AppUI:
             label="Show Archived Files",
             value=False,
             on_change=self.show_archived_changed
+        )
+        
+        # AI Analysis dropdown and button
+        self.ai_analysis_dropdown = ft.Dropdown(
+            label="AI Analysis Type",
+            width=150,
+            value="tagging",
+            options=[
+                ft.dropdown.Option("tagging", "Tags"),
+                ft.dropdown.Option("summarization", "Summary"),
+                ft.dropdown.Option("sentiment", "Sentiment")
+            ],
+            dense=True,
+            on_change=self.ai_analysis_type_changed
         )
         
         self.analyze_button = ft.ElevatedButton(
@@ -309,6 +341,7 @@ class AppUI:
                     self.file_progress_bar
                 ], spacing=2, tight=True),
                 self.progress_ring,
+                self.ai_analysis_dropdown,
                 self.analyze_button,
                 self.cancel_button
             ]
@@ -326,6 +359,7 @@ class AppUI:
     def start_analysis_view(self):
         """分析中のUI表示に切り替える"""
         self.analyze_button.visible = False
+        self.ai_analysis_dropdown.visible = False
         self.progress_ring.visible = True
         self.cancel_button.visible = True
         self.page.update()
@@ -334,6 +368,7 @@ class AppUI:
     def stop_analysis_view(self):
         """通常のUI表示に戻す"""
         self.analyze_button.visible = True
+        self.ai_analysis_dropdown.visible = True
         self.progress_ring.visible = False
         self.cancel_button.visible = False
         self.hide_progress_indicators()
@@ -382,14 +417,134 @@ class AppUI:
         self.operation_status_text.visible = False
         self.progress_ring.visible = False
         self.page.update()
+    
+    def show_ai_analysis_results(self, analysis_type: str, result_data: dict):
+        """AI分析結果を表示するダイアログ"""
+        title_map = {
+            "summarization": "Summary Results",
+            "sentiment": "Sentiment Analysis Results",
+            "tagging": "Tagging Results"
+        }
+        
+        content_widgets = []
+        
+        if analysis_type == "summarization":
+            summary = result_data.get("summary", "No summary generated")
+            summary_type = result_data.get("summary_type", "brief")
+            compression_ratio = result_data.get("compression_ratio", 0)
+            
+            content_widgets.extend([
+                ft.Text(f"Summary Type: {summary_type.title()}", weight=ft.FontWeight.BOLD),
+                ft.Divider(height=1),
+                ft.Container(
+                    content=ft.Text(summary, selectable=True),
+                    bgcolor=ft.Colors.GREY_100,
+                    padding=10,
+                    border_radius=5
+                ),
+                ft.Text(f"Compression Ratio: {compression_ratio:.2%}", size=12, color=ft.Colors.GREY_600)
+            ])
+            
+        elif analysis_type == "sentiment":
+            overall_sentiment = result_data.get("overall_sentiment", "Unknown")
+            emotions = result_data.get("emotions_detected", [])
+            intensity = result_data.get("intensity", "Unknown")
+            
+            # Sentiment color coding
+            sentiment_color = ft.Colors.GREY
+            if "ポジティブ" in overall_sentiment:
+                sentiment_color = ft.Colors.GREEN
+            elif "ネガティブ" in overall_sentiment:
+                sentiment_color = ft.Colors.RED
+                
+            content_widgets.extend([
+                ft.Row([
+                    ft.Text("Overall Sentiment:", weight=ft.FontWeight.BOLD),
+                    ft.Container(
+                        content=ft.Text(overall_sentiment, color=ft.Colors.WHITE),
+                        bgcolor=sentiment_color,
+                        padding=ft.padding.symmetric(horizontal=8, vertical=4),
+                        border_radius=15
+                    )
+                ]),
+                ft.Text(f"Intensity: {intensity}", size=14),
+                ft.Text("Detected Emotions:", weight=ft.FontWeight.BOLD, size=14),
+                ft.Row([
+                    ft.Chip(
+                        label=ft.Text(emotion.title()),
+                        bgcolor=ft.Colors.BLUE_100
+                    ) for emotion in emotions
+                ] if emotions else [ft.Text("No specific emotions detected", color=ft.Colors.GREY)], wrap=True)
+            ])
+            
+        elif analysis_type == "tagging":
+            tags = result_data.get("tags", [])
+            content_widgets.extend([
+                ft.Text(f"Generated {len(tags)} tags:", weight=ft.FontWeight.BOLD),
+                ft.Row([
+                    ft.Chip(
+                        label=ft.Text(tag),
+                        bgcolor=ft.Colors.BLUE_100
+                    ) for tag in tags
+                ] if tags else [ft.Text("No tags generated", color=ft.Colors.GREY)], wrap=True)
+            ])
+        
+        # Create and show dialog
+        dialog = ft.AlertDialog(
+            title=ft.Text(title_map.get(analysis_type, "Analysis Results")),
+            content=ft.Container(
+                content=ft.Column(
+                    content_widgets,
+                    spacing=10,
+                    scroll=ft.ScrollMode.AUTO
+                ),
+                width=500,
+                height=300
+            ),
+            actions=[
+                ft.TextButton("Close", on_click=lambda e: self.close_ai_results_dialog())
+            ]
+        )
+        
+        self.page.overlay.append(dialog)
+        dialog.open = True
+        self.ai_results_dialog = dialog
+        self.page.update()
+    
+    def close_ai_results_dialog(self):
+        """AI分析結果ダイアログを閉じる"""
+        if hasattr(self, 'ai_results_dialog') and self.ai_results_dialog in self.page.overlay:
+            self.page.overlay.remove(self.ai_results_dialog)
+            self.page.update()
 
         
+    def ai_analysis_type_changed(self, e):
+        """AI分析タイプが変更されたときの処理"""
+        analysis_type = self.ai_analysis_dropdown.value
+        if analysis_type == "tagging":
+            self.analyze_button.text = "Analyze Tags"
+            self.analyze_button.icon = ft.Icons.AUTO_AWESOME
+        elif analysis_type == "summarization":
+            self.analyze_button.text = "Generate Summary"
+            self.analyze_button.icon = ft.Icons.SUMMARIZE
+        elif analysis_type == "sentiment":
+            self.analyze_button.text = "Analyze Sentiment"
+            self.analyze_button.icon = ft.Icons.SENTIMENT_SATISFIED
+        self.page.update()
+    
     def analyze_button_clicked(self, e):
         active_tab = self.get_active_tab()
         if active_tab and hasattr(active_tab.content, 'data'):
             path = active_tab.content.data
             content = active_tab.content.value
-            self.on_analyze_tags(path, content)
+            analysis_type = self.ai_analysis_dropdown.value
+            
+            if analysis_type == "tagging":
+                self.on_analyze_tags(path, content)
+            else:
+                # Use new AI analysis system for other types
+                if self.on_run_ai_analysis:
+                    self.on_run_ai_analysis(path, content, analysis_type)
 
     def save_button_clicked(self, e):
         active_tab = self.get_active_tab()
@@ -547,6 +702,33 @@ class AppUI:
         self.page.overlay.append(self.delete_dialog_overlay)
         self.page.update()
     
+    def handle_ai_analysis(self, file_path, analysis_type):
+        """ファイルリストからのAI分析リクエストを処理する"""
+        try:
+            # ファイルの内容を読み込む
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            # AI分析を実行
+            if self.on_run_ai_analysis:
+                self.on_run_ai_analysis(file_path, content, analysis_type)
+            else:
+                self.page.snack_bar = ft.SnackBar(
+                    content=ft.Text("AI analysis is not available")
+                )
+                self.page.snack_bar.open = True
+                self.page.update()
+                
+        except Exception as e:
+            from log_utils import log_error
+            log_error(f"AI analysis from file list failed for file '{file_path}': {e}")
+            print(f"Error in AI analysis from file list: {e}")
+            self.page.snack_bar = ft.SnackBar(
+                content=ft.Text(f"Error reading file: {str(e)}")
+            )
+            self.page.snack_bar.open = True
+            self.page.update()
+    
     def handle_move_file(self, direction, file_info):
         """ファイルの移動操作を処理する"""
         print(f"Moving file {file_info['title']} to {direction}")  # Debug
@@ -675,7 +857,8 @@ class AppUI:
                     on_rename_intent=self.handle_rename_intent,
                     on_archive_intent=self.handle_archive_intent,
                     on_move_file=self.handle_move_file,
-                    on_delete_intent=self.handle_delete_intent
+                    on_delete_intent=self.handle_delete_intent,
+                    on_ai_analysis=self.handle_ai_analysis
                 )
                 
                 # アーカイブされたファイルの視覚的区別
