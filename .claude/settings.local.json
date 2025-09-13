@@ -8,7 +8,12 @@
       "Bash(git add:*)",
       "Bash(git push:*)",
       "Bash(pip freeze)",
-      "Bash(del test_phase2.py)"
+      "Bash(del test_phase2.py)",
+      "Bash(pip install:*)",
+      "Bash(./test_in_venv.bat)",
+      "Bash(test_in_venv.bat)",
+      "Bash(.test_in_venv.bat)",
+      "Bash(.venvScriptsactivate)"
     ],
     "deny": [],
     "ask": []

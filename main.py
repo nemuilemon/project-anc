@@ -100,7 +100,8 @@ def main(page: ft.Page):
             on_create_file=handlers.handle_create_file,
             on_archive_file=handlers.handle_archive_file,
             on_update_order=handlers.handle_update_order,
-            on_delete_file=handlers.handle_delete_file
+            on_delete_file=handlers.handle_delete_file,
+            on_run_ai_analysis=handlers.handle_ai_analysis
         )
         
         # Now update the handlers with the initialized app_ui

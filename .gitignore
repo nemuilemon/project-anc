@@ -23,3 +23,7 @@ log.md
 build/
 dist/
 ProjectANC.spec
+
+# logs
+logs/
+.log
