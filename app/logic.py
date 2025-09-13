@@ -1,7 +1,11 @@
 # logic.py
 import os
+import sys
 import time
 from tinydb import Query
+
+# Add config directory to path
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'config'))
 import config
 from security import sanitize_filename, validate_file_path, safe_file_operation, create_safe_directory, SecurityError
 from async_operations import async_manager, ProgressTracker, run_with_progress

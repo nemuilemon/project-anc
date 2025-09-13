@@ -9,17 +9,20 @@
 - AI分析用モデル設定
 """
 
+# プロジェクトルートディレクトリの取得
+import os
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 # メモを保存するメインディレクトリ
-# TODO: 環境変数またはユーザー設定ファイルから読み込むように変更予定
-NOTES_DIR = r"C:\notes"
+NOTES_DIR = os.path.join(PROJECT_ROOT, "data", "notes")
 
 # アーカイブファイルを保存するディレクトリ
 # アーカイブされたファイルはここに移動される
-ARCHIVE_DIR = r"C:\notes\.archive"
+ARCHIVE_DIR = os.path.join(NOTES_DIR, ".archive")
 
-# TinyDBデータベースファイル名
+# TinyDBデータベースファイル名とパス
 # ファイルのメタデータ（タグ、ステータス、順序等）を格納
-DB_FILE = "anc_db.json"
+DB_FILE = os.path.join(PROJECT_ROOT, "data", "anc_db.json")
 
 # Ollama AIモデル名
 # タグ自動生成で使用するローカルLLMモデル

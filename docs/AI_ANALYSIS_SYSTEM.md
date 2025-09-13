@@ -317,7 +317,7 @@ python tests/run_tests.py integration
 The system uses the model specified in `config.py`:
 
 ```python
-OLLAMA_MODEL = "gemma3:4b"  # Default model for AI analysis
+OLLAMA_MODEL = "llama3.1:8b"  # Recommended model for AI analysis
 ```
 
 ### Plugin Configuration

@@ -5,7 +5,7 @@ echo ========================================
 echo.
 
 echo [STEP 1] Activating virtual environment...
-call .venv\Scripts\activate
+call ..\.venv\Scripts\activate
 
 echo [STEP 2] Verifying Python version and packages...
 python --version
@@ -26,8 +26,8 @@ echo [SUCCESS] All working component tests passed!
 
 echo.
 echo [STEP 5] Testing import structure...
-python -c "from ai_analysis import AIAnalysisManager, TaggingPlugin; print('[OK] Core imports successful')"
-python -c "from logic import AppLogic; from tinydb import TinyDB; print('[OK] Integration imports successful')"
+python -c "import sys; sys.path.append('../app'); from ai_analysis import AIAnalysisManager, TaggingPlugin; print('[OK] Core imports successful')"
+python -c "import sys; sys.path.append('../app'); sys.path.append('../config'); from logic import AppLogic; from tinydb import TinyDB; print('[OK] Integration imports successful')"
 
 echo.
 echo ========================================
