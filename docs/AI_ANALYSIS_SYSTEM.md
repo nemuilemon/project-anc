@@ -26,13 +26,14 @@ The system follows a plugin pattern where each analysis type is implemented as a
 
 ### 1. Tagging Plugin (`tagging`)
 
-Extracts relevant tags and keywords from content using AI analysis.
+Extracts relevant tags and keywords from content using **real Ollama AI analysis**.
 
 **Features:**
-- Automatic keyword extraction
+- **Ollama AI-powered** keyword extraction with Japanese prompts
 - Retry logic for handling long AI responses
-- Configurable tag limits
-- Asynchronous execution support
+- Configurable tag limits (default: 5-8 tags)
+- Asynchronous execution support with progress tracking
+- Automatic content truncation and re-prompting for long responses
 
 **Usage:**
 ```python
@@ -50,13 +51,14 @@ result = ai_manager.analyze_async(
 
 ### 2. Summarization Plugin (`summarization`)
 
-Generates concise summaries of content using AI analysis.
+Generates concise summaries of content using **real Ollama AI analysis**.
 
 **Features:**
+- **Ollama AI-powered** text summarization with Japanese prompts
 - Multiple summary types: brief, detailed, bullet points
-- Configurable summary length
-- Automatic length optimization
-- Content compression ratio tracking
+- Configurable summary length (max_sentences parameter)
+- Automatic length optimization and content compression
+- Intelligent re-prompting for overly long summaries
 
 **Parameters:**
 - `summary_type`: "brief", "detailed", or "bullet" (default: "brief")
@@ -74,13 +76,15 @@ result = ai_manager.analyze(
 
 ### 3. Sentiment Plugin (`sentiment`)
 
-Analyzes emotional tone and sentiment of content.
+Analyzes emotional tone and sentiment of content using **real Ollama AI analysis**.
 
 **Features:**
+- **Ollama AI-powered** sentiment analysis with Japanese prompts
 - Overall sentiment classification (positive/negative/neutral)
-- Emotion detection (joy, sadness, anger, fear, surprise)
-- Intensity analysis (weak/moderate/strong)
-- Multiple analysis modes
+- Detailed emotion detection (joy, sadness, anger, fear, surprise, disgust)
+- Intensity analysis (weak/moderate/strong) with 0-10 scales
+- Multiple analysis modes: basic, detailed, emotional
+- Tone analysis (formal/casual/passionate/calm)
 
 **Parameters:**
 - `analysis_type`: "basic", "detailed", or "emotional" (default: "basic")
@@ -93,6 +97,39 @@ result = ai_manager.analyze(
     "sentiment", 
     analysis_type="detailed"
 )
+```
+
+## System Requirements
+
+### Ollama Setup
+
+The AI analysis system requires **Ollama** to be installed and running locally for real AI analysis.
+
+**Installation:**
+1. Download Ollama from https://ollama.com/download
+2. Install Ollama on your system
+3. Pull a compatible AI model:
+   ```bash
+   ollama pull llama3.1:8b    # Recommended model
+   ollama pull gemma2:9b      # Alternative model
+   ```
+
+**Configuration:**
+- Set `OLLAMA_MODEL` in `config.py` to your preferred model
+- Ensure Ollama is running: `ollama serve`
+- Verify connection: `ollama list`
+
+**Error Handling:**
+- If Ollama is not running, analysis will fail gracefully
+- Connection errors are logged and displayed to users
+- System fallback: Manual analysis or retry when Ollama is available
+
+### Dependencies
+
+```txt
+flet>=0.21.0      # UI framework
+tinydb>=4.8.0     # Lightweight database
+ollama>=0.1.7     # AI integration
 ```
 
 ## API Reference

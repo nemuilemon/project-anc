@@ -109,27 +109,27 @@ ollama>=0.1.7     # AI integration
 
 ## Test Architecture
 
-### Plugin Testing with Fallback System
+### Production AI Plugin System
 
-The testing system uses a smart fallback approach to handle syntax errors in development:
+The AI analysis system now uses real Ollama-powered plugins for production functionality:
 
 ```python
 # In ai_analysis/__init__.py
-try:
-    from .plugins.tagging_plugin import TaggingPlugin
-    from .plugins.summarization_plugin import SummarizationPlugin  
-    from .plugins.sentiment_plugin import SentimentPlugin
-except SyntaxError:
-    # Fallback to test plugins if main plugins have syntax errors
-    from .plugins.minimal_test import TestTaggingPlugin as TaggingPlugin
-    from .plugins.minimal_test import TestSummarizationPlugin as SummarizationPlugin
-    from .plugins.minimal_test import TestSentimentPlugin as SentimentPlugin
+# Import real AI analysis plugins
+from .plugins.tagging_plugin import TaggingPlugin
+from .plugins.summarization_plugin import SummarizationPlugin
+from .plugins.sentiment_plugin import SentimentPlugin
 ```
 
-This ensures:
-- Core architecture can be tested even with plugin development issues
-- Integration testing continues during plugin refinement
-- Backward compatibility is always verified
+**Real AI Capabilities:**
+- **Tagging Plugin**: Uses Ollama AI to extract relevant keywords and tags from content
+- **Summarization Plugin**: Generates AI-powered summaries with configurable length and style
+- **Sentiment Plugin**: Performs detailed emotional analysis and sentiment classification
+
+**Requirements:**
+- Ollama must be installed and running locally
+- Configured AI model (set in `config.OLLAMA_MODEL`)
+- Active internet connection for AI model downloads
 
 ## Continuous Testing
 

@@ -26,4 +26,4 @@ ProjectANC.spec
 
 # logs
 logs/
-.log
+*.log
