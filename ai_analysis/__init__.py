@@ -11,16 +11,10 @@ is implemented as a separate plugin class inheriting from BaseAnalysisPlugin.
 from .base_plugin import BaseAnalysisPlugin, AnalysisResult
 from .manager import AIAnalysisManager
 
-# Use minimal test plugins for now to avoid syntax errors
-try:
-    from .plugins.tagging_plugin import TaggingPlugin
-    from .plugins.summarization_plugin import SummarizationPlugin
-    from .plugins.sentiment_plugin import SentimentPlugin
-except SyntaxError:
-    # Fallback to test plugins if main plugins have syntax errors
-    from .plugins.minimal_test import TestTaggingPlugin as TaggingPlugin
-    from .plugins.minimal_test import TestSummarizationPlugin as SummarizationPlugin
-    from .plugins.minimal_test import TestSentimentPlugin as SentimentPlugin
+# Import real AI analysis plugins
+from .plugins.tagging_plugin import TaggingPlugin
+from .plugins.summarization_plugin import SummarizationPlugin
+from .plugins.sentiment_plugin import SentimentPlugin
 
 __all__ = [
     'BaseAnalysisPlugin',

@@ -152,26 +152,11 @@ class SummarizationPlugin(BaseAnalysisPlugin):
         try:
             # Create prompt based on summary type
             if summary_type == "bullet":
-                prompt = f\"\"\"
-                以下の文章を{max_sentences}つの箇条書きポイントで要約してください。
-                各ポイントは「・」で始めてください。
-                
-                文章:「{content}」
-                \"\"\"
+                prompt = f"以下の文章を{max_sentences}つの箇条書きポイントで要約してください。各ポイントは「・」で始めてください。文章:「{content}」"
             elif summary_type == "detailed":
-                prompt = f\"\"\"
-                以下の文章を{max_sentences}文以内で詳細に要約してください。
-                重要なポイントと背景情報を含めてください。
-                
-                文章:「{content}」
-                \"\"\"
+                prompt = f"以下の文章を{max_sentences}文以内で詳細に要約してください。重要なポイントと背景情報を含めてください。文章:「{content}」"
             else:  # brief
-                prompt = f\"\"\"
-                以下の文章を{max_sentences}文以内で簡潔に要約してください。
-                最も重要なポイントのみを含めてください。
-                
-                文章:「{content}」
-                \"\"\"
+                prompt = f"以下の文章を{max_sentences}文以内で簡潔に要約してください。最も重要なポイントのみを含めてください。文章:「{content}」"
             
             if progress_callback:
                 self._update_progress(progress_callback, 60)
@@ -189,10 +174,7 @@ class SummarizationPlugin(BaseAnalysisPlugin):
             # Validate summary length
             if len(summary) > self.max_summary_length:
                 # If too long, try to shorten it
-                shorter_prompt = f\"\"\"
-                以下の要約をさらに短く（200文字以内）まとめてください:
-                {summary}
-                \"\"\"
+                shorter_prompt = f"以下の要約をさらに短く（200文字以内）まとめてください: {summary}"
                 
                 shorter_response = ollama.generate(
                     model=config.OLLAMA_MODEL,
