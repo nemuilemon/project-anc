@@ -22,7 +22,7 @@ class FileListItem(ft.ListTile):
         on_move_file: ファイル移動操作時のコールバック
         on_delete_intent: ファイル削除時のコールバック
     """
-    def __init__(self, file_info, on_update_tags, on_open_file, on_rename_intent, on_archive_intent, on_move_file, on_delete_intent, on_ai_analysis=None):
+    def __init__(self, file_info, on_update_tags, on_open_file, on_rename_intent, on_archive_intent, on_move_file, on_delete_intent, on_ai_analysis=None, page=None):
         super().__init__()
 
         self.file_info = file_info
@@ -33,6 +33,7 @@ class FileListItem(ft.ListTile):
         self.on_move_file = on_move_file
         self.on_delete_intent = on_delete_intent
         self.on_ai_analysis = on_ai_analysis
+        self.page = page  # Add page reference for snackbar
         self.editing = False
 
         # --- Define all controls that will be used/swapped ---
@@ -62,17 +63,6 @@ class FileListItem(ft.ListTile):
                 icon=ft.Icons.EDIT,
                 on_click=self.edit_clicked
             ),
-            ft.PopupMenuItem(),  # Separator
-            ft.PopupMenuItem(
-                text="Generate Summary",
-                icon=ft.Icons.SUMMARIZE,
-                on_click=lambda e: self.ai_analysis_clicked("summarization")
-            ),
-            ft.PopupMenuItem(
-                text="Analyze Sentiment",
-                icon=ft.Icons.SENTIMENT_SATISFIED,
-                on_click=lambda e: self.ai_analysis_clicked("sentiment")
-            ),
         ]
         
         # アーカイブ状態に応じてメニュー項目を追加
@@ -92,14 +82,25 @@ class FileListItem(ft.ListTile):
         
         # 順番変更用のメニュー項目を追加
         menu_items.extend([
+            ft.PopupMenuItem(),  # Separator
+            ft.PopupMenuItem(
+                text="Move Up",
+                icon=ft.Icons.ARROW_UPWARD,
+                on_click=self.move_up_clicked
+            ),
+            ft.PopupMenuItem(
+                text="Move Down",
+                icon=ft.Icons.ARROW_DOWNWARD,
+                on_click=self.move_down_clicked
+            ),
             ft.PopupMenuItem(
                 text="Move to top",
-                icon=ft.Icons.KEYBOARD_ARROW_UP,
+                icon=ft.Icons.KEYBOARD_DOUBLE_ARROW_UP,
                 on_click=self.move_to_top_clicked
             ),
             ft.PopupMenuItem(
-                text="Move to bottom", 
-                icon=ft.Icons.KEYBOARD_ARROW_DOWN,
+                text="Move to bottom",
+                icon=ft.Icons.KEYBOARD_DOUBLE_ARROW_DOWN,
                 on_click=self.move_to_bottom_clicked
             ),
             ft.PopupMenuItem(),  # Separator
@@ -121,18 +122,28 @@ class FileListItem(ft.ListTile):
         # --- Configure the initial state of the ListTile (self) ---
         self.title = ft.Text(self.file_info['title'])
         self.on_click = self.open_file_clicked
+        # Use on_secondary_tap for right-click support
+        self.on_secondary_tap = self.show_context_menu
+
+        # Add drag and drop support
+        self.data = self.file_info['path']  # Data to be transferred during drag
         self.set_view_mode() # Set initial controls
 
     def set_view_mode(self):
         """表示モードに切り替える。
-        
+
         タグをテキスト表示し、ポップアップメニューボタンを表示する。
         編集モードから表示モードに戻る際に使用される。
         """
         self.subtitle = self.tags_text
         self.trailing = self.menu_button
         self.editing = False
-        if self.page: self.update()
+        # Only call update if we're not in initialization (page exists and we're already part of a control tree)
+        if self.page and hasattr(self, 'parent') and self.parent:
+            try:
+                self.update()
+            except Exception as e:
+                print(f"Warning: Failed to update FileListItem during set_view_mode: {e}")
 
     def set_edit_mode(self):
         """編集モードに切り替える。
@@ -155,16 +166,36 @@ class FileListItem(ft.ListTile):
         self.on_rename_intent(self.file_info)
     
     def archive_intent_clicked(self, e):
+        print(f"Archive intent clicked for: {self.file_info['title']}")  # Debug log
         self.on_archive_intent(self.file_info)
     
+    def move_up_clicked(self, e):
+        self.on_move_file('up', self.file_info)
+
+    def move_down_clicked(self, e):
+        self.on_move_file('down', self.file_info)
+
     def move_to_top_clicked(self, e):
         self.on_move_file('top', self.file_info)
-    
+
     def move_to_bottom_clicked(self, e):
         self.on_move_file('bottom', self.file_info)
     
     def delete_intent_clicked(self, e):
         self.on_delete_intent(self.file_info)
+
+    def show_context_menu(self, e):
+        """Show context menu on right-click."""
+        # Show the existing popup menu button when right-clicked
+        print(f"Right-click on {self.file_info['title']}")  # Debug
+        # This will show a snackbar to confirm right-click works, then show menu
+        if hasattr(self, 'page'):  # If we have page reference
+            self.page.snack_bar = ft.SnackBar(
+                content=ft.Text(f"Right-clicked on {self.file_info['title']}"),
+                duration=1000
+            )
+            self.page.snack_bar.open = True
+            self.page.update()
     
     def ai_analysis_clicked(self, analysis_type):
         """AI分析を実行するコールバック"""
@@ -242,7 +273,7 @@ class AppUI:
         page (ft.Page): Fletページオブジェクト
         tabs (ft.Tabs): メインのタブコンテナ
         file_list_column (ft.Column): ファイルリスト表示用コンテナ
-        show_archived_switch (ft.Switch): アーカイブファイル表示切替
+        show_archived_button (ft.ElevatedButton): アーカイブエクスプローラーボタン
     
     Callbacks:
         各操作に対応するコールバック関数群（on_open_file, on_save_file等）
@@ -263,16 +294,17 @@ class AppUI:
         self.on_update_order = on_update_order
         self.on_delete_file = on_delete_file
         
-        self.tabs = ft.Tabs(selected_index=0, expand=True, tabs=[])
+        self.tabs = ft.Tabs(selected_index=0, expand=True, tabs=[], on_change=self.on_tab_change)
         # ファイルリスト用のコンテナ
         self.file_list_column = ft.Column(scroll=ft.ScrollMode.AUTO, expand=True)
         self.file_list = self.file_list_column
         
-        # アーカイブファイル表示切替スイッチ
-        self.show_archived_switch = ft.Switch(
-            label="Show Archived Files",
-            value=False,
-            on_change=self.show_archived_changed
+        # アーカイブファイル表示ボタン
+        self.show_archived_button = ft.ElevatedButton(
+            text="Archive Explorer",
+            icon=ft.Icons.ARCHIVE,
+            on_click=self.show_archived_clicked,
+            tooltip="Open Archive Explorer to view archived files"
         )
         
         # AI Analysis dropdown and button
@@ -349,7 +381,7 @@ class AppUI:
         
         self.sidebar = ft.Container(
             content=ft.Column([
-                self.show_archived_switch,
+                self.show_archived_button,
                 ft.Divider(height=10),
                 self.file_list
             ]),
@@ -532,13 +564,60 @@ class AppUI:
             self.analyze_button.icon = ft.Icons.SENTIMENT_SATISFIED
         self.page.update()
     
+    def auto_save_active_tab(self):
+        """Auto-save the active tab if it has unsaved changes."""
+        active_tab = self.get_active_tab()
+        if active_tab and hasattr(active_tab.content, 'data'):
+            path = active_tab.content.data
+            content = active_tab.content.value
+            if self.on_save_file:
+                self.on_save_file(path, content)
+                return True
+        return False
+
+    def auto_save_all_tabs(self):
+        """Auto-save all open tabs."""
+        saved_count = 0
+        for tab in self.tabs.tabs:
+            if hasattr(tab.content, 'data') and hasattr(tab.content, 'value'):
+                path = tab.content.data
+                content = tab.content.value
+                if self.on_save_file:
+                    self.on_save_file(path, content)
+                    saved_count += 1
+        return saved_count
+
+    def on_tab_change(self, e):
+        """Handle tab change event - auto-save the previously active tab."""
+        # Auto-save the previously active tab (before switching)
+        # Note: e.control.selected_index is the new tab index, we need to save the previous one
+        # Since we can't easily track the previous tab, we'll auto-save all tabs with changes
+        self.auto_save_all_tabs()
+
+
+    def handle_keyboard_event(self, e):
+        """Handle keyboard events for shortcuts like Ctrl+S."""
+        if e.key == "S" and e.ctrl:
+            # Ctrl+S: Save active tab
+            if self.auto_save_active_tab():
+                # Show brief confirmation
+                self.page.snack_bar = ft.SnackBar(
+                    content=ft.Text("File saved"),
+                    duration=1000  # 1 second
+                )
+                self.page.snack_bar.open = True
+                self.page.update()
+
     def analyze_button_clicked(self, e):
+        # Auto-save before AI analysis
+        self.auto_save_active_tab()
+
         active_tab = self.get_active_tab()
         if active_tab and hasattr(active_tab.content, 'data'):
             path = active_tab.content.data
             content = active_tab.content.value
             analysis_type = self.ai_analysis_dropdown.value
-            
+
             if analysis_type == "tagging":
                 self.on_analyze_tags(path, content)
             else:
@@ -626,13 +705,158 @@ class AppUI:
         self.page.overlay.append(self.rename_dialog_overlay)
         self.page.update()
     
-    def show_archived_changed(self, e):
-        """アーカイブファイル表示切替スイッチの変更を処理する"""
-        # コールバックを呼び出してファイルリストを更新
-        self.on_refresh_files(show_archived=self.show_archived_switch.value)
+    def show_archived_clicked(self, e):
+        """アーカイブエクスプローラーボタンのクリックを処理する"""
+        # Always open Archive Explorer modal when button is clicked
+        self.open_archive_explorer()
     
+    def open_archive_explorer(self):
+        """Open the Archive Explorer modal dialog."""
+        # Get archived files using the app_logic reference
+        archived_files = []
+        if hasattr(self, '_app_logic_ref'):
+            try:
+                all_files = self._app_logic_ref.get_file_list(show_archived=True)
+                archived_files = [f for f in all_files if f.get('status') == 'archived']
+            except Exception as e:
+                print(f"Error getting archived files: {e}")
+                archived_files = []
+
+        # Create archive file list
+        archive_file_controls = []
+        for file_info in archived_files:
+            archive_item = ft.ListTile(
+                title=ft.Text(file_info['title']),
+                subtitle=ft.Text(", ".join(file_info.get('tags', []))) if file_info.get('tags') else None,
+                trailing=ft.Row([
+                    ft.IconButton(
+                        icon=ft.Icons.UNARCHIVE,
+                        tooltip="Unarchive file",
+                        on_click=lambda e, path=file_info['path']: self.unarchive_from_modal(path)
+                    ),
+                    ft.IconButton(
+                        icon=ft.Icons.OPEN_IN_NEW,
+                        tooltip="Open file",
+                        on_click=lambda e, path=file_info['path']: self.open_file_from_modal(path)
+                    ),
+                    ft.IconButton(
+                        icon=ft.Icons.DELETE_FOREVER,
+                        tooltip="Delete permanently",
+                        on_click=lambda e, file_info=file_info: self.delete_from_modal(file_info)
+                    )
+                ], tight=True)
+            )
+            archive_file_controls.append(archive_item)
+
+        # Create scrollable list
+        archive_list = ft.Column(
+            controls=archive_file_controls if archive_file_controls else [
+                ft.Text("No archived files found",
+                       text_align=ft.TextAlign.CENTER,
+                       color=ft.Colors.GREY_600)
+            ],
+            scroll=ft.ScrollMode.AUTO,
+            expand=True
+        )
+
+        def close_archive_modal(e=None):
+            if hasattr(self, 'archive_dialog_overlay') and self.archive_dialog_overlay in self.page.overlay:
+                self.page.overlay.remove(self.archive_dialog_overlay)
+                self.page.update()
+                # Refresh the main file list to reflect any changes
+                self.on_refresh_files(show_archived=False)
+
+        # Create modal dialog
+        modal_content = ft.Container(
+            content=ft.Column([
+                ft.Row([
+                    ft.Text("Archive Explorer", size=20, weight=ft.FontWeight.BOLD),
+                    ft.Container(expand=True),  # Spacer equivalent
+                    ft.IconButton(
+                        icon=ft.Icons.CLOSE,
+                        on_click=close_archive_modal,
+                        tooltip="Close"
+                    )
+                ]),
+                ft.Divider(),
+                ft.Text(f"Found {len(archive_file_controls)} archived files"),
+                ft.Divider(),
+                archive_list,
+                ft.Row([
+                    ft.ElevatedButton(
+                        "Close",
+                        on_click=close_archive_modal
+                    )
+                ], alignment=ft.MainAxisAlignment.END)
+            ]),
+            width=600,
+            height=500,
+            padding=20,
+            bgcolor=ft.Colors.SURFACE,
+            border_radius=10
+        )
+
+        # Create overlay
+        self.archive_dialog_overlay = ft.Container(
+            content=modal_content,
+            alignment=ft.alignment.center,
+            bgcolor=ft.Colors.with_opacity(0.5, ft.Colors.BLACK),
+            expand=True
+        )
+
+        self.page.overlay.append(self.archive_dialog_overlay)
+        self.page.update()
+
+    def show_error_dialog(self, title: str, message: str):
+        """エラーダイアログを表示する"""
+        def close_dialog(e):
+            if hasattr(self, 'error_dialog') and self.error_dialog in self.page.overlay:
+                self.page.overlay.remove(self.error_dialog)
+                self.page.update()
+
+        self.error_dialog = ft.AlertDialog(
+            title=ft.Text(title, weight=ft.FontWeight.BOLD),
+            content=ft.Text(message),
+            actions=[
+                ft.TextButton("OK", on_click=close_dialog)
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+
+        self.page.overlay.append(self.error_dialog)
+        self.error_dialog.open = True
+        self.page.update()
+
+    def unarchive_from_modal(self, file_path):
+        """Unarchive a file from the modal."""
+        if hasattr(self, 'on_archive_file'):
+            self.on_archive_file(file_path)  # This should unarchive if already archived
+        # Refresh the modal
+        self.refresh_archive_modal()
+
+    def open_file_from_modal(self, file_path):
+        """Open a file from the archive modal."""
+        if hasattr(self, 'on_open_file'):
+            self.on_open_file(file_path)
+
+    def delete_from_modal(self, file_info):
+        """Delete a file permanently from the archive modal."""
+        if hasattr(self, 'on_delete_file'):
+            self.on_delete_file(file_info['path'])
+        # Refresh the modal
+        self.refresh_archive_modal()
+
+    def refresh_archive_modal(self):
+        """Refresh the archive modal contents."""
+        # Close and reopen the modal with updated content
+        if hasattr(self, 'archive_dialog_overlay') and self.archive_dialog_overlay in self.page.overlay:
+            self.page.overlay.remove(self.archive_dialog_overlay)
+            self.page.update()
+            self.open_archive_explorer()
+
     def handle_archive_intent(self, file_info):
         """アーカイブ操作の意図を受け取り処理する"""
+        print(f"Handle archive intent for: {file_info['title']} at path: {file_info['path']}")  # Debug log
         self.on_archive_file(file_info['path'])
     
     def handle_delete_intent(self, file_info):
@@ -752,11 +976,22 @@ class AppUI:
                 new_order.append(f)
         
         if target_file:
+            # Find current position of the target file
+            current_index = next((i for i, f in enumerate(current_files) if f['path'] == target_file_path), -1)
+
             if direction == 'top':
                 new_order.insert(0, target_file)  # 最初に挿入
             elif direction == 'bottom':
                 new_order.append(target_file)  # 最後に追加
-            
+            elif direction == 'up':
+                # Move one position up (insert at current position - 1, or 0 if already at top)
+                insert_pos = max(0, current_index - 1)
+                new_order.insert(insert_pos, target_file)
+            elif direction == 'down':
+                # Move one position down (insert at current position + 1, or end if already at bottom)
+                insert_pos = min(len(new_order), current_index + 1)
+                new_order.insert(insert_pos, target_file)
+
             # 新しい順番を更新
             ordered_paths = [f['path'] for f in new_order]
             self.on_update_order(ordered_paths)
@@ -858,7 +1093,8 @@ class AppUI:
                     on_archive_intent=self.handle_archive_intent,
                     on_move_file=self.handle_move_file,
                     on_delete_intent=self.handle_delete_intent,
-                    on_ai_analysis=self.handle_ai_analysis
+                    on_ai_analysis=self.handle_ai_analysis,
+                    page=self.page
                 )
                 
                 # アーカイブされたファイルの視覚的区別

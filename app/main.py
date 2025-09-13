@@ -110,6 +110,9 @@ def main(page: ft.Page):
         
         # Now update the handlers with the initialized app_ui
         handlers.app_ui = app_ui
+
+        # Add reference to app_logic in UI for archive functionality
+        app_ui._app_logic_ref = app_logic
         
         page.appbar = app_ui.appbar
         page.add(app_ui.build())
@@ -140,12 +143,17 @@ def main(page: ft.Page):
     
     # Register cleanup on page close
     def on_page_close(e):
+        # Auto-save all open tabs before closing
+        app_ui.auto_save_all_tabs()
         app_logger.log_app_shutdown()
         # Cleanup async operations
         from async_operations import async_manager
         async_manager.shutdown()
-    
+
     page.on_window_event = lambda e: on_page_close(e) if e.data == "close" else None
+
+    # Register keyboard event handler for shortcuts like Ctrl+S
+    page.on_keyboard_event = app_ui.handle_keyboard_event
 
 # アプリケーションエントリーポイントのセーフラッパー
 def safe_main():

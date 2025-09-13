@@ -72,40 +72,49 @@ class AppLogic:
     # 2. データベース同期機能：フォルダとDBを同期する新機能
     def sync_database(self):
         """ファイルシステムとデータベースを同期する。
-        
-        NOTES_DIR内の.mdファイルをスキャンし、データベースに登録されていない
+
+        NOTES_DIR及びARCHIVE_DIR内の.mdファイルをスキャンし、データベースに登録されていない
         新しいファイルを自動的に追加する。既存のDBレコードは変更しない。
-        
-        Raises:
-            FileNotFoundError: NOTES_DIRが存在しない場合は処理をスキップ
-        
+
         Note:
+            NOTES_DIR内の新ファイルは'active'状態、ARCHIVE_DIR内の新ファイルは'archived'状態で追加される。
             新しいファイルのorder_indexは、既存の最大値+1が設定される。
         """
-        # フォルダにある実際のファイル一覧を取得
+        actual_files = set()
+
+        # NOTES_DIR内のファイルをスキャン（activeファイル）
         try:
-            actual_files = {os.path.join(config.NOTES_DIR, f) for f in os.listdir(config.NOTES_DIR) if f.endswith('.md')}
+            notes_files = {(os.path.join(config.NOTES_DIR, f), 'active') for f in os.listdir(config.NOTES_DIR) if f.endswith('.md')}
+            actual_files.update(notes_files)
         except FileNotFoundError:
-            # NOTES_DIRが存在しない場合は何もしない
-            return
-            
+            # NOTES_DIRが存在しない場合はスキップ
+            pass
+
+        # ARCHIVE_DIR内のファイルをスキャン（archivedファイル）
+        try:
+            archive_files = {(os.path.join(config.ARCHIVE_DIR, f), 'archived') for f in os.listdir(config.ARCHIVE_DIR) if f.endswith('.md')}
+            actual_files.update(archive_files)
+        except FileNotFoundError:
+            # ARCHIVE_DIRが存在しない場合はスキップ
+            pass
+
         # データベースに登録されているファイル一覧を取得
         db_files = {doc['path'] for doc in self.db.all()}
-        
+
         # フォルダにはあるけど、DBにないファイル（＝新しいファイル）を見つける
-        new_files = actual_files - db_files
-        
+        new_files = [(path, status) for path, status in actual_files if path not in db_files]
+
         # 新しいファイルをDBに初期登録する（order_indexは最大値+1）
         existing_max_order = 0
         all_records = self.db.all()
         if all_records:
             existing_max_order = max([doc.get('order_index', 0) for doc in all_records])
-        
-        for i, path in enumerate(new_files):
+
+        for i, (path, status) in enumerate(new_files):
             title = os.path.basename(path)
             order_index = existing_max_order + i + 1
-            self.db.insert({'title': title, 'path': path, 'tags': [], 'status': 'active', 'order_index': order_index})
-            print(f"New file found and added to DB: {title} (order: {order_index})")
+            self.db.insert({'title': title, 'path': path, 'tags': [], 'status': status, 'order_index': order_index})
+            print(f"New {status} file found and added to DB: {title} (order: {order_index})")
 
     # 3. 手動タグ更新機能：タグ情報を更新する新機能
     def update_tags(self, path, tags):
@@ -544,35 +553,49 @@ class AppLogic:
     def archive_file(self, file_path):
         """ファイルをアーカイブフォルダに移動し、DBのレコードを更新する"""
         try:
-            # 1. アーカイブディレクトリが存在しない場合は作成
+            print(f"Archive operation started for: {file_path}")  # Debug log
+
+            # 1. ファイルが存在するかチェック
+            if not os.path.exists(file_path):
+                return False, f"ファイル「{os.path.basename(file_path)}」が見つかりません。"
+
+            # 2. アーカイブディレクトリが存在しない場合は作成
             if not os.path.exists(config.ARCHIVE_DIR):
+                print(f"Creating archive directory: {config.ARCHIVE_DIR}")  # Debug log
                 os.makedirs(config.ARCHIVE_DIR)
-            
-            # 2. 新しいアーカイブパスを生成
+
+            # 3. 新しいアーカイブパスを生成
             filename = os.path.basename(file_path)
             archive_path = os.path.join(config.ARCHIVE_DIR, filename)
-            
-            # 3. アーカイブフォルダに同名ファイルがある場合の処理
+            print(f"Archive path: {archive_path}")  # Debug log
+
+            # 4. アーカイブフォルダに同名ファイルがある場合の処理
             if os.path.exists(archive_path):
-                return False, "アーカイブフォルダに同じ名前のファイルが既に存在します。"
-            
-            # 4. ファイルをアーカイブフォルダに移動
+                return False, f"アーカイブフォルダに「{filename}」が既に存在します。\n別の名前に変更してからアーカイブしてください。"
+
+            # 5. ファイルをアーカイブフォルダに移動
+            print(f"Moving file from {file_path} to {archive_path}")  # Debug log
             os.rename(file_path, archive_path)
-            
-            # 5. データベースのレコードを更新
+
+            # 6. データベースのレコードを更新
             File = Query()
-            self.db.update(
+            update_result = self.db.update(
                 {'path': archive_path, 'status': 'archived'},
                 File.path == file_path
             )
-            
+            print(f"Database update result: {update_result}")  # Debug log
+
             return True, f"ファイル「{filename}」をアーカイブしました。"
         except Exception as e:
             print(f"Error archiving file: {e}")
+            print(f"Exception type: {type(e)}")
             # ファイル移動が失敗した場合、元に戻す試み
-            if os.path.exists(archive_path):
-                os.rename(archive_path, file_path)
-            return False, "ファイルのアーカイブ中にエラーが発生しました。"
+            try:
+                if 'archive_path' in locals() and os.path.exists(archive_path):
+                    os.rename(archive_path, file_path)
+            except:
+                pass
+            return False, f"ファイルのアーカイブ中にエラーが発生しました: {str(e)}"
 
     def unarchive_file(self, file_path):
         """アーカイブされたファイルを元のフォルダに戻す"""
@@ -583,7 +606,7 @@ class AppLogic:
             
             # 2. 元のフォルダに同名ファイルがある場合の処理
             if os.path.exists(active_path):
-                return False, "アクティブフォルダに同じ名前のファイルが既に存在します。"
+                return False, f"アクティブフォルダに「{filename}」が既に存在します。\n先にファイル名を変更するか、既存ファイルを削除してください。"
             
             # 3. ファイルを元のフォルダに移動
             os.rename(file_path, active_path)

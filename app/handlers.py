@@ -418,9 +418,30 @@ class AppHandlers:
             self.page.snack_bar.open = True
             self.page.update()
 
+    def show_error_dialog(self, title: str, message: str):
+        """エラーダイアログを表示する"""
+        def close_dialog(e):
+            if hasattr(self, 'error_dialog') and self.error_dialog in self.page.overlay:
+                self.page.overlay.remove(self.error_dialog)
+                self.page.update()
+
+        self.error_dialog = ft.AlertDialog(
+            title=ft.Text(title),
+            content=ft.Text(message),
+            actions=[
+                ft.TextButton("OK", on_click=close_dialog)
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+
+        self.page.overlay.append(self.error_dialog)
+        self.error_dialog.open = True
+        self.page.update()
+
     def handle_archive_file(self, file_path: str):
         """ファイルアーカイブ処理のハンドラ"""
         try:
+            print(f"Handler: archive_file called with path: {file_path}")  # Debug log
             # ファイルの現在のステータスを確認
             from tinydb import Query
             File = Query()
@@ -437,17 +458,27 @@ class AppHandlers:
             if current_status == 'archived':
                 # アンアーカイブ
                 success, message = self.app_logic.unarchive_file(file_path)
+                operation_name = "アンアーカイブ"
             else:
                 # アーカイブ
                 success, message = self.app_logic.archive_file(file_path)
-            
-            self.page.snack_bar = ft.SnackBar(content=ft.Text(message))
-            self.page.snack_bar.open = True
+                operation_name = "アーカイブ"
+
+            # Show different UI based on success/failure
+            if success:
+                # Success: Use SnackBar for brief confirmation
+                self.page.snack_bar = ft.SnackBar(
+                    content=ft.Text(message),
+                    bgcolor=ft.Colors.GREEN_100
+                )
+                self.page.snack_bar.open = True
+            else:
+                # Error: Use AlertDialog for more visible notification
+                self.show_error_dialog(f"{operation_name}エラー", message)
             
             if success:
-                # ファイルリストを更新
-                show_archived = self.app_ui.show_archived_switch.value
-                all_files = self.app_logic.get_file_list(show_archived=show_archived)
+                # ファイルリストを更新（アクティブファイルのみ）
+                all_files = self.app_logic.get_file_list(show_archived=False)
                 self.app_ui.update_file_list(all_files)
                 
                 # アーカイブされたファイルが現在開いているタブにある場合は閉じる
@@ -481,8 +512,7 @@ class AppHandlers:
             
             if success:
                 # ファイルリストを更新（現在の表示状態を保持）
-                show_archived = self.app_ui.show_archived_switch.value
-                all_files = self.app_logic.get_file_list(show_archived=show_archived)
+                all_files = self.app_logic.get_file_list(show_archived=False)
                 self.app_ui.update_file_list(all_files)
                 
                 # 成功メッセージを表示
@@ -511,8 +541,7 @@ class AppHandlers:
             if success:
                 # ファイルリストを更新
                 try:
-                    show_archived = self.app_ui.show_archived_switch.value
-                    all_files = self.app_logic.get_file_list(show_archived=show_archived)
+                    all_files = self.app_logic.get_file_list(show_archived=False)
                     self.app_ui.update_file_list(all_files)
                 except Exception as list_error:
                     print(f"Error updating file list after delete: {list_error}")
