@@ -10,7 +10,7 @@ __pycache__/
 test.md
 
 # local database
-anc_db.json
+data/anc_db.json
 
 # test
 cleanup.py
@@ -27,3 +27,6 @@ ProjectANC.spec
 # logs
 logs/
 *.log
+
+# User data
+data/notes/
