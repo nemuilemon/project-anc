@@ -19,10 +19,9 @@ class FileListItem(ft.ListTile):
         on_open_file: ファイルオープン時のコールバック
         on_rename_intent: ファイル名変更時のコールバック
         on_archive_intent: アーカイブ操作時のコールバック
-        on_move_file: ファイル移動操作時のコールバック
         on_delete_intent: ファイル削除時のコールバック
     """
-    def __init__(self, file_info, on_update_tags, on_open_file, on_rename_intent, on_archive_intent, on_move_file, on_delete_intent, on_ai_analysis=None, page=None):
+    def __init__(self, file_info, on_update_tags, on_open_file, on_rename_intent, on_archive_intent, on_delete_intent, on_ai_analysis=None, page=None):
         super().__init__()
 
         self.file_info = file_info
@@ -30,7 +29,6 @@ class FileListItem(ft.ListTile):
         self.on_open_file = on_open_file
         self.on_rename_intent = on_rename_intent
         self.on_archive_intent = on_archive_intent
-        self.on_move_file = on_move_file
         self.on_delete_intent = on_delete_intent
         self.on_ai_analysis = on_ai_analysis
         self.page = page  # Add page reference for snackbar
@@ -79,30 +77,9 @@ class FileListItem(ft.ListTile):
                 icon=ft.Icons.ARCHIVE,
                 on_click=self.archive_intent_clicked
             ))
-        
-        # 順番変更用のメニュー項目を追加
+
+        # Add separator and delete option
         menu_items.extend([
-            ft.PopupMenuItem(),  # Separator
-            ft.PopupMenuItem(
-                text="Move Up",
-                icon=ft.Icons.ARROW_UPWARD,
-                on_click=self.move_up_clicked
-            ),
-            ft.PopupMenuItem(
-                text="Move Down",
-                icon=ft.Icons.ARROW_DOWNWARD,
-                on_click=self.move_down_clicked
-            ),
-            ft.PopupMenuItem(
-                text="Move to top",
-                icon=ft.Icons.KEYBOARD_DOUBLE_ARROW_UP,
-                on_click=self.move_to_top_clicked
-            ),
-            ft.PopupMenuItem(
-                text="Move to bottom",
-                icon=ft.Icons.KEYBOARD_DOUBLE_ARROW_DOWN,
-                on_click=self.move_to_bottom_clicked
-            ),
             ft.PopupMenuItem(),  # Separator
             ft.PopupMenuItem(
                 text="Delete file",
@@ -169,17 +146,6 @@ class FileListItem(ft.ListTile):
         print(f"Archive intent clicked for: {self.file_info['title']}")  # Debug log
         self.on_archive_intent(self.file_info)
     
-    def move_up_clicked(self, e):
-        self.on_move_file('up', self.file_info)
-
-    def move_down_clicked(self, e):
-        self.on_move_file('down', self.file_info)
-
-    def move_to_top_clicked(self, e):
-        self.on_move_file('top', self.file_info)
-
-    def move_to_bottom_clicked(self, e):
-        self.on_move_file('bottom', self.file_info)
     
     def delete_intent_clicked(self, e):
         self.on_delete_intent(self.file_info)
@@ -278,7 +244,7 @@ class AppUI:
     Callbacks:
         各操作に対応するコールバック関数群（on_open_file, on_save_file等）
     """
-    def __init__(self, page: ft.Page, on_open_file, on_save_file, on_analyze_tags, on_refresh_files, on_update_tags, on_cancel_tags, on_rename_file, on_close_tab, on_create_file, on_archive_file, on_update_order, on_delete_file, on_run_ai_analysis=None):
+    def __init__(self, page: ft.Page, on_open_file, on_save_file, on_analyze_tags, on_refresh_files, on_update_tags, on_cancel_tags, on_rename_file, on_close_tab, on_create_file, on_archive_file, on_delete_file, on_run_ai_analysis=None):
         self.page = page
         self.on_open_file = on_open_file
         self.on_save_file = on_save_file
@@ -291,7 +257,6 @@ class AppUI:
         self.on_close_tab = on_close_tab
         self.on_create_file = on_create_file
         self.on_archive_file = on_archive_file
-        self.on_update_order = on_update_order
         self.on_delete_file = on_delete_file
         
         self.tabs = ft.Tabs(selected_index=0, expand=True, tabs=[], on_change=self.on_tab_change)
@@ -953,48 +918,6 @@ class AppUI:
             self.page.snack_bar.open = True
             self.page.update()
     
-    def handle_move_file(self, direction, file_info):
-        """ファイルの移動操作を処理する"""
-        print(f"Moving file {file_info['title']} to {direction}")  # Debug
-        
-        # 現在のファイル一覧を取得
-        current_files = []
-        for control in self.file_list_column.controls:
-            if hasattr(control, 'file_info'):
-                current_files.append(control.file_info)
-        
-        # ファイルの新しい位置を計算
-        target_file_path = file_info['path']
-        new_order = []
-        target_file = None
-        
-        # 対象ファイルを除いたリストを作成
-        for f in current_files:
-            if f['path'] == target_file_path:
-                target_file = f
-            else:
-                new_order.append(f)
-        
-        if target_file:
-            # Find current position of the target file
-            current_index = next((i for i, f in enumerate(current_files) if f['path'] == target_file_path), -1)
-
-            if direction == 'top':
-                new_order.insert(0, target_file)  # 最初に挿入
-            elif direction == 'bottom':
-                new_order.append(target_file)  # 最後に追加
-            elif direction == 'up':
-                # Move one position up (insert at current position - 1, or 0 if already at top)
-                insert_pos = max(0, current_index - 1)
-                new_order.insert(insert_pos, target_file)
-            elif direction == 'down':
-                # Move one position down (insert at current position + 1, or end if already at bottom)
-                insert_pos = min(len(new_order), current_index + 1)
-                new_order.insert(insert_pos, target_file)
-
-            # 新しい順番を更新
-            ordered_paths = [f['path'] for f in new_order]
-            self.on_update_order(ordered_paths)
 
     def new_file_button_clicked(self, e):
         """Shows a custom modal dialog to get a filename for the new file."""
@@ -1091,7 +1014,6 @@ class AppUI:
                     on_open_file=self.on_open_file,
                     on_rename_intent=self.handle_rename_intent,
                     on_archive_intent=self.handle_archive_intent,
-                    on_move_file=self.handle_move_file,
                     on_delete_intent=self.handle_delete_intent,
                     on_ai_analysis=self.handle_ai_analysis,
                     page=self.page

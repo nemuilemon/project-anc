@@ -65,8 +65,8 @@ class AppLogic:
             # statusフィールドがないレガシーファイルはアクティブとして扱う
             files = self.db.search((File.status == 'active') | (~File.status.exists()))
         
-        # order_indexでソート（order_indexがないファイルは0として扱う）
-        files.sort(key=lambda x: x.get('order_index', 0))
+        # ファイル名でアルファベット順にソート
+        files.sort(key=lambda x: x.get('title', '').lower())
         return files
 
     # 2. データベース同期機能：フォルダとDBを同期する新機能
@@ -74,11 +74,11 @@ class AppLogic:
         """ファイルシステムとデータベースを同期する。
 
         NOTES_DIR及びARCHIVE_DIR内の.mdファイルをスキャンし、データベースに登録されていない
-        新しいファイルを自動的に追加する。既存のDBレコードは変更しない。
+        新しいファイルを自動的に追加し、対応するファイルが存在しない孤立したレコードを削除する。
 
         Note:
             NOTES_DIR内の新ファイルは'active'状態、ARCHIVE_DIR内の新ファイルは'archived'状態で追加される。
-            新しいファイルのorder_indexは、既存の最大値+1が設定される。
+            ファイルシステムに存在しないDBレコード（孤立したレコード）は自動的に削除される。
         """
         actual_files = set()
 
@@ -104,17 +104,29 @@ class AppLogic:
         # フォルダにはあるけど、DBにないファイル（＝新しいファイル）を見つける
         new_files = [(path, status) for path, status in actual_files if path not in db_files]
 
-        # 新しいファイルをDBに初期登録する（order_indexは最大値+1）
-        existing_max_order = 0
-        all_records = self.db.all()
-        if all_records:
-            existing_max_order = max([doc.get('order_index', 0) for doc in all_records])
-
-        for i, (path, status) in enumerate(new_files):
+        # 新しいファイルをDBに追加する
+        for path, status in new_files:
             title = os.path.basename(path)
-            order_index = existing_max_order + i + 1
-            self.db.insert({'title': title, 'path': path, 'tags': [], 'status': status, 'order_index': order_index})
-            print(f"New {status} file found and added to DB: {title} (order: {order_index})")
+            self.db.insert({'title': title, 'path': path, 'tags': [], 'status': status})
+            print(f"New {status} file found and added to DB: {title}")
+
+        # ファイルシステムに存在しないDBレコード（孤立したレコード）を削除する
+        actual_file_paths = {path for path, status in actual_files}
+        orphaned_records = []
+
+        for doc in self.db.all():
+            db_path = doc.get('path', '')
+            if db_path and not os.path.exists(db_path):
+                orphaned_records.append(doc)
+
+        # 孤立したレコードをDBから削除
+        from tinydb import Query
+        File = Query()
+        for record in orphaned_records:
+            removed_docs = self.db.remove(File.path == record['path'])
+            if len(removed_docs) > 0:
+                title = record.get('title', os.path.basename(record['path']))
+                print(f"Orphaned record removed from DB: {title} (file no longer exists)")
 
     # 3. 手動タグ更新機能：タグ情報を更新する新機能
     def update_tags(self, path, tags):
@@ -626,31 +638,6 @@ class AppLogic:
                 os.rename(active_path, file_path)
             return False, "ファイルのアーカイブ解除中にエラーが発生しました。"
 
-    def update_file_order(self, ordered_paths):
-        """ファイルの新しい順番を受け取り、order_indexをデータベースで更新する"""
-        try:
-            print(f"Updating file order for {len(ordered_paths)} files")  # Debug
-            File = Query()
-            
-            # 各パスに対して新しい order_index を設定
-            for new_index, path in enumerate(ordered_paths, start=1):
-                print(f"Setting order_index {new_index} for {path}")  # Debug
-                # パスに対応するファイルの order_index を更新
-                updated_count = self.db.update(
-                    {'order_index': new_index},
-                    File.path == path
-                )
-                
-                if updated_count == 0:
-                    print(f"Warning: File not found in DB for path: {path}")
-                else:
-                    print(f"Updated {updated_count} records for {path}")  # Debug
-            
-            print("File order update completed successfully")  # Debug
-            return True, "ファイルの順番を更新しました。"
-        except Exception as e:
-            print(f"Error updating file order: {e}")
-            return False, "ファイル順番の更新中にエラーが発生しました。"
 
     def delete_file(self, file_path):
         """ファイルを完全に削除し、データベースからもレコードを削除する。

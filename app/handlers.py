@@ -503,32 +503,6 @@ class AppHandlers:
             self.page.snack_bar.open = True
             self.page.update()
 
-    def handle_update_order(self, ordered_paths: list):
-        """ファイル順序更新処理のハンドラ"""
-        try:
-            print(f"Handle update order called with: {len(ordered_paths)} files")
-            success, message = self.app_logic.update_file_order(ordered_paths)
-            print(f"Update order result: {success}, {message}")
-            
-            if success:
-                # ファイルリストを更新（現在の表示状態を保持）
-                all_files = self.app_logic.get_file_list(show_archived=False)
-                self.app_ui.update_file_list(all_files)
-                
-                # 成功メッセージを表示
-                self.page.snack_bar = ft.SnackBar(content=ft.Text(message))
-                self.page.snack_bar.open = True
-            else:
-                # エラーメッセージを表示
-                self.page.snack_bar = ft.SnackBar(content=ft.Text(message))
-                self.page.snack_bar.open = True
-            
-            self.page.update()
-        except Exception as e:
-            print(f"Error in handle_update_order: {e}")
-            self.page.snack_bar = ft.SnackBar(content=ft.Text(f"順序更新エラー: {str(e)}"))
-            self.page.snack_bar.open = True
-            self.page.update()
 
     def handle_delete_file(self, file_path: str):
         """ファイル削除処理のハンドラ"""
