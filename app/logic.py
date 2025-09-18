@@ -975,6 +975,41 @@ class AppLogic:
 
         return files_without_analysis
 
+    def get_untagged_archived_files(self):
+        """未タグ付けのアーカイブファイルの一覧を取得（バッチ処理用）。
+
+        Returns:
+            list: タグが空のアーカイブファイルのリスト
+        """
+        File = Query()
+        # タグが空のリスト、またはタグフィールドが存在しないアーカイブファイルを検索
+        untagged_archived_files = self.db.search(
+            (File.status == 'archived') &
+            ((~File.tags.exists()) | (File.tags == []))
+        )
+        return untagged_archived_files
+
+    def get_archived_files_without_analysis(self, analysis_type: str):
+        """指定した分析が未実行のアーカイブファイル一覧を取得（バッチ処理用）。
+
+        Args:
+            analysis_type (str): 分析タイプ ("summarization", "sentiment")
+
+        Returns:
+            list: 指定した分析が未実行のアーカイブファイルのリスト
+        """
+        File = Query()
+        # AI分析データが存在しない、または指定タイプの分析が未実行のアーカイブファイル
+        files_without_analysis = []
+        archived_files = self.db.search(File.status == 'archived')
+
+        for file_doc in archived_files:
+            ai_analysis = file_doc.get('ai_analysis', {})
+            if analysis_type not in ai_analysis:
+                files_without_analysis.append(file_doc)
+
+        return files_without_analysis
+
     def run_batch_processing(self, task_type: str, progress_callback=None, cancel_event=None):
         """バッチ処理を実行する汎用的なエンジン。
 
@@ -1007,6 +1042,18 @@ class AppLogic:
                 target_files = self.get_files_without_analysis("sentiment")
                 analysis_type = "sentiment"
                 task_name = "感情分析"
+            elif task_type == "batch_tag_archived":
+                target_files = self.get_untagged_archived_files()
+                analysis_type = "tagging"
+                task_name = "アーカイブファイルのタグ付け"
+            elif task_type == "batch_summarize_archived":
+                target_files = self.get_archived_files_without_analysis("summarization")
+                analysis_type = "summarization"
+                task_name = "アーカイブファイルの要約生成"
+            elif task_type == "batch_sentiment_archived":
+                target_files = self.get_archived_files_without_analysis("sentiment")
+                analysis_type = "sentiment"
+                task_name = "アーカイブファイルの感情分析"
             else:
                 return {
                     "success": False,

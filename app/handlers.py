@@ -563,7 +563,10 @@ class AppHandlers:
         task_messages = {
             "batch_tag_untagged": "未タグファイルを自動タグ付け中...",
             "batch_summarize": "ファイルの要約を一括生成中...",
-            "batch_sentiment": "ファイルの感情分析を一括実行中..."
+            "batch_sentiment": "ファイルの感情分析を一括実行中...",
+            "batch_tag_archived": "アーカイブファイルを自動タグ付け中...",
+            "batch_summarize_archived": "アーカイブファイルの要約を一括生成中...",
+            "batch_sentiment_archived": "アーカイブファイルの感情分析を一括実行中..."
         }
 
         initial_message = task_messages.get(task_type, "自動化タスクを実行中...")
@@ -634,6 +637,15 @@ class AppHandlers:
             elif task_type == "batch_sentiment":
                 target_files = self.app_logic.get_files_without_analysis("sentiment")
                 task_name = "ファイル感情分析の一括実行"
+            elif task_type == "batch_tag_archived":
+                target_files = self.app_logic.get_untagged_archived_files()
+                task_name = "アーカイブファイルの自動タグ付け"
+            elif task_type == "batch_summarize_archived":
+                target_files = self.app_logic.get_archived_files_without_analysis("summarization")
+                task_name = "アーカイブファイル要約の一括生成"
+            elif task_type == "batch_sentiment_archived":
+                target_files = self.app_logic.get_archived_files_without_analysis("sentiment")
+                task_name = "アーカイブファイル感情分析の一括実行"
             else:
                 return {
                     "task_name": "不明なタスク",
