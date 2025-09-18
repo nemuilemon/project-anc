@@ -21,7 +21,7 @@ class FileListItem(ft.ListTile):
         on_archive_intent: アーカイブ操作時のコールバック
         on_delete_intent: ファイル削除時のコールバック
     """
-    def __init__(self, file_info, on_update_tags, on_open_file, on_rename_intent, on_archive_intent, on_delete_intent, on_ai_analysis=None, page=None):
+    def __init__(self, file_info, on_update_tags, on_open_file, on_rename_intent, on_archive_intent, on_delete_intent, on_ai_analysis=None, on_view_summary=None, page=None):
         super().__init__()
 
         self.file_info = file_info
@@ -31,6 +31,7 @@ class FileListItem(ft.ListTile):
         self.on_archive_intent = on_archive_intent
         self.on_delete_intent = on_delete_intent
         self.on_ai_analysis = on_ai_analysis
+        self.on_view_summary = on_view_summary
         self.page = page  # Add page reference for snackbar
         self.editing = False
 
@@ -97,7 +98,24 @@ class FileListItem(ft.ListTile):
         )
 
         # --- Configure the initial state of the ListTile (self) ---
-        self.title = ft.Text(self.file_info['title'])
+        # Check if summary is available and add indicator
+        has_summary = self._has_ai_summary()
+        title_row = [ft.Text(self.file_info['title'])]
+
+        if has_summary:
+            summary_button = ft.IconButton(
+                icon=ft.Icons.SUMMARIZE,
+                icon_size=16,
+                tooltip="View AI Summary",
+                on_click=self.view_summary_clicked,
+                style=ft.ButtonStyle(
+                    color=ft.Colors.BLUE_400,
+                    padding=ft.Padding(2, 2, 2, 2)
+                )
+            )
+            title_row.append(summary_button)
+
+        self.title = ft.Row(title_row, spacing=5) if has_summary else ft.Text(self.file_info['title'])
         self.on_click = self.open_file_clicked
         # Use on_secondary_tap for right-click support
         self.on_secondary_tap = self.show_context_menu
@@ -167,6 +185,16 @@ class FileListItem(ft.ListTile):
         """AI分析を実行するコールバック"""
         if self.on_ai_analysis:
             self.on_ai_analysis(self.file_info['path'], analysis_type)
+
+    def _has_ai_summary(self):
+        """ファイルにAIサマリーが保存されているかチェック"""
+        ai_analysis = self.file_info.get('ai_analysis', {})
+        return 'summarization' in ai_analysis and ai_analysis['summarization'].get('data', {}).get('summary', '')
+
+    def view_summary_clicked(self, e):
+        """サマリー表示ボタンクリック時の処理"""
+        if self.on_view_summary:
+            self.on_view_summary(self.file_info)
 
     def rename_clicked(self, e):
         """Shows a dialog to get a new file name."""
@@ -1101,7 +1129,90 @@ class AppUI:
             )
             self.page.snack_bar.open = True
             self.page.update()
-    
+
+    def handle_view_summary(self, file_info):
+        """サマリー表示ダイアログを表示する"""
+        ai_analysis = file_info.get('ai_analysis', {})
+        summary_data = ai_analysis.get('summarization', {})
+
+        if not summary_data or 'data' not in summary_data:
+            self.page.snack_bar = ft.SnackBar(
+                content=ft.Text("このファイルにはサマリーが保存されていません。")
+            )
+            self.page.snack_bar.open = True
+            self.page.update()
+            return
+
+        summary_info = summary_data['data']
+        summary_text = summary_info.get('summary', 'サマリーが見つかりません。')
+        summary_type = summary_info.get('summary_type', 'brief')
+        original_length = summary_info.get('original_length', 0)
+        summary_length = summary_info.get('summary_length', 0)
+        compression_ratio = summary_info.get('compression_ratio', 0)
+        timestamp = summary_data.get('timestamp', 0)
+        processing_time = summary_data.get('processing_time', 0)
+
+        # タイムスタンプを日時に変換
+        import time as time_module
+        formatted_time = time_module.strftime("%Y/%m/%d %H:%M:%S", time_module.localtime(timestamp)) if timestamp > 0 else "不明"
+
+        def close_summary_dialog(e=None):
+            if hasattr(self, 'summary_dialog_overlay') and self.summary_dialog_overlay in self.page.overlay:
+                self.page.overlay.remove(self.summary_dialog_overlay)
+                self.page.update()
+
+        # サマリー表示ダイアログを作成
+        self.summary_dialog_overlay = ft.Container(
+            content=ft.Container(
+                content=ft.Column([
+                    ft.Row([
+                        ft.Icon(ft.Icons.SUMMARIZE, color=ft.Colors.BLUE, size=28),
+                        ft.Text("AI サマリー", size=20, weight=ft.FontWeight.BOLD, color=ft.Colors.BLUE)
+                    ], spacing=10),
+                    ft.Divider(height=10),
+                    ft.Text(f"ファイル: {file_info['title']}", size=14, weight=ft.FontWeight.W_500),
+                    ft.Container(
+                        content=ft.Text(
+                            summary_text,
+                            size=14,
+                            selectable=True
+                        ),
+                        bgcolor=ft.Colors.GREY_100,
+                        padding=ft.padding.all(15),
+                        border_radius=8,
+                        margin=ft.margin.symmetric(vertical=10)
+                    ),
+                    ft.Column([
+                        ft.Text("詳細情報", size=12, weight=ft.FontWeight.W_500, color=ft.Colors.GREY_700),
+                        ft.Text(f"生成日時: {formatted_time}", size=10, color=ft.Colors.GREY_600),
+                        ft.Text(f"サマリータイプ: {summary_type}", size=10, color=ft.Colors.GREY_600),
+                        ft.Text(f"元文書: {original_length}文字 → サマリー: {summary_length}文字 (圧縮率: {compression_ratio})", size=10, color=ft.Colors.GREY_600),
+                        ft.Text(f"処理時間: {processing_time:.2f}秒", size=10, color=ft.Colors.GREY_600),
+                    ], spacing=3, tight=True),
+                    ft.Row([
+                        ft.TextButton("閉じる", on_click=close_summary_dialog),
+                    ], alignment=ft.MainAxisAlignment.END)
+                ], spacing=10, tight=True),
+                padding=ft.padding.all(20),
+                bgcolor=ft.Colors.WHITE,
+                border_radius=10,
+                shadow=ft.BoxShadow(
+                    spread_radius=1,
+                    blur_radius=15,
+                    color=ft.Colors.BLACK26,
+                    offset=ft.Offset(0, 4),
+                ),
+                width=600,
+                height=500,
+            ),
+            alignment=ft.alignment.center,
+            bgcolor=ft.Colors.BLACK54,
+            expand=True,
+            on_click=close_summary_dialog
+        )
+
+        self.page.overlay.append(self.summary_dialog_overlay)
+        self.page.update()
 
     def new_file_button_clicked(self, e):
         """Shows a custom modal dialog to get a filename for the new file."""
@@ -1200,6 +1311,7 @@ class AppUI:
                     on_archive_intent=self.handle_archive_intent,
                     on_delete_intent=self.handle_delete_intent,
                     on_ai_analysis=self.handle_ai_analysis,
+                    on_view_summary=self.handle_view_summary,
                     page=self.page
                 )
                 
