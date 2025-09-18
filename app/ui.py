@@ -63,7 +63,15 @@ class FileListItem(ft.ListTile):
                 on_click=self.edit_clicked
             ),
         ]
-        
+
+        # サマリーが存在する場合はサマリー表示オプションを追加
+        if self._has_ai_summary():
+            menu_items.append(ft.PopupMenuItem(
+                text="View AI Summary",
+                icon=ft.Icons.SUMMARIZE,
+                on_click=self.view_summary_clicked
+            ))
+
         # アーカイブ状態に応じてメニュー項目を追加
         file_status = self.file_info.get('status', 'active')
         if file_status == 'archived':
@@ -325,7 +333,10 @@ class AppUI:
             options=[
                 ft.dropdown.Option("batch_tag_untagged", "Batch Tag Untagged Files"),
                 ft.dropdown.Option("batch_summarize", "Batch Generate Summaries"),
-                ft.dropdown.Option("batch_sentiment", "Batch Sentiment Analysis")
+                ft.dropdown.Option("batch_sentiment", "Batch Sentiment Analysis"),
+                ft.dropdown.Option("batch_tag_archived", "Batch Tag Archived Files"),
+                ft.dropdown.Option("batch_summarize_archived", "Batch Summarize Archived Files"),
+                ft.dropdown.Option("batch_sentiment_archived", "Batch Analyze Archived Sentiment")
             ],
             on_change=self.automation_task_changed
         )
@@ -888,53 +899,51 @@ class AppUI:
         self.open_archive_explorer()
     
     def open_archive_explorer(self):
-        """Open the Archive Explorer modal dialog."""
+        """Open the Archive Explorer modal dialog with filtering capabilities."""
         # Get archived files using the app_logic reference
-        archived_files = []
+        self.all_archived_files = []
         if hasattr(self, '_app_logic_ref'):
             try:
                 all_files = self._app_logic_ref.get_file_list(show_archived=True)
-                archived_files = [f for f in all_files if f.get('status') == 'archived']
+                self.all_archived_files = [f for f in all_files if f.get('status') == 'archived']
             except Exception as e:
                 print(f"Error getting archived files: {e}")
-                archived_files = []
+                self.all_archived_files = []
 
-        # Create archive file list
-        archive_file_controls = []
-        for file_info in archived_files:
-            archive_item = ft.ListTile(
-                title=ft.Text(file_info['title']),
-                subtitle=ft.Text(", ".join(file_info.get('tags', []))) if file_info.get('tags') else None,
-                trailing=ft.Row([
-                    ft.IconButton(
-                        icon=ft.Icons.UNARCHIVE,
-                        tooltip="Unarchive file",
-                        on_click=lambda e, path=file_info['path']: self.unarchive_from_modal(path)
-                    ),
-                    ft.IconButton(
-                        icon=ft.Icons.OPEN_IN_NEW,
-                        tooltip="Open file",
-                        on_click=lambda e, path=file_info['path']: self.open_file_from_modal(path)
-                    ),
-                    ft.IconButton(
-                        icon=ft.Icons.DELETE_FOREVER,
-                        tooltip="Delete permanently",
-                        on_click=lambda e, file_info=file_info: self.delete_from_modal(file_info)
-                    )
-                ], tight=True)
+        # Create filter controls
+        self.filename_filter = ft.TextField(
+            label="Filter by filename",
+            hint_text="Enter filename keywords...",
+            width=250,
+            on_change=self.filter_archived_files
+        )
+
+        self.tag_filter = ft.TextField(
+            label="Filter by tags",
+            hint_text="Enter tag keywords...",
+            width=250,
+            on_change=self.filter_archived_files
+        )
+
+        filter_row = ft.Row([
+            self.filename_filter,
+            self.tag_filter,
+            ft.IconButton(
+                icon=ft.Icons.CLEAR,
+                tooltip="Clear filters",
+                on_click=self.clear_archive_filters
             )
-            archive_file_controls.append(archive_item)
+        ], spacing=10)
 
-        # Create scrollable list
-        archive_list = ft.Column(
-            controls=archive_file_controls if archive_file_controls else [
-                ft.Text("No archived files found",
-                       text_align=ft.TextAlign.CENTER,
-                       color=ft.Colors.GREY_600)
-            ],
+        # Create container for filtered file list
+        self.archive_list_container = ft.Column(
+            controls=[],
             scroll=ft.ScrollMode.AUTO,
             expand=True
         )
+
+        # Initial populate
+        self.update_archive_file_list(self.all_archived_files)
 
         def close_archive_modal(e=None):
             if hasattr(self, 'archive_dialog_overlay') and self.archive_dialog_overlay in self.page.overlay:
@@ -942,6 +951,9 @@ class AppUI:
                 self.page.update()
                 # Refresh the main file list to reflect any changes
                 self.on_refresh_files(show_archived=False)
+
+        # Create file count display
+        self.archive_file_count_text = ft.Text(f"Found {len(self.all_archived_files)} archived files")
 
         # Create modal dialog
         modal_content = ft.Container(
@@ -956,9 +968,11 @@ class AppUI:
                     )
                 ]),
                 ft.Divider(),
-                ft.Text(f"Found {len(archive_file_controls)} archived files"),
+                filter_row,
                 ft.Divider(),
-                archive_list,
+                self.archive_file_count_text,
+                ft.Divider(),
+                self.archive_list_container,
                 ft.Row([
                     ft.ElevatedButton(
                         "Close",
@@ -966,8 +980,8 @@ class AppUI:
                     )
                 ], alignment=ft.MainAxisAlignment.END)
             ]),
-            width=600,
-            height=500,
+            width=700,
+            height=600,
             padding=20,
             bgcolor=ft.Colors.SURFACE,
             border_radius=10
@@ -983,6 +997,118 @@ class AppUI:
 
         self.page.overlay.append(self.archive_dialog_overlay)
         self.page.update()
+
+    def update_archive_file_list(self, files_to_display):
+        """Update the archive file list display with given files."""
+        archive_file_controls = []
+
+        for file_info in files_to_display:
+            # Check if file has summary
+            has_summary = False
+            summary_preview = ""
+            ai_analysis = file_info.get('ai_analysis', {})
+            if 'summarization' in ai_analysis and ai_analysis['summarization'].get('data', {}).get('summary', ''):
+                has_summary = True
+                summary_text = ai_analysis['summarization']['data']['summary']
+                summary_preview = summary_text[:100] + "..." if len(summary_text) > 100 else summary_text
+
+            # Create subtitle with tags and summary
+            subtitle_parts = []
+            if file_info.get('tags'):
+                subtitle_parts.append(f"Tags: {', '.join(file_info['tags'])}")
+            if has_summary:
+                subtitle_parts.append(f"Summary: {summary_preview}")
+
+            subtitle_text = " | ".join(subtitle_parts) if subtitle_parts else None
+
+            # Create action buttons
+            action_buttons = [
+                ft.IconButton(
+                    icon=ft.Icons.UNARCHIVE,
+                    tooltip="Unarchive file",
+                    on_click=lambda e, path=file_info['path']: self.unarchive_from_modal(path)
+                ),
+                ft.IconButton(
+                    icon=ft.Icons.OPEN_IN_NEW,
+                    tooltip="Open file",
+                    on_click=lambda e, path=file_info['path']: self.open_file_from_modal(path)
+                )
+            ]
+
+            # Add summary button if summary exists
+            if has_summary:
+                action_buttons.append(
+                    ft.IconButton(
+                        icon=ft.Icons.SUMMARIZE,
+                        tooltip="View AI Summary",
+                        on_click=lambda e, fi=file_info: self.handle_view_summary(fi),
+                        style=ft.ButtonStyle(color=ft.Colors.BLUE_400)
+                    )
+                )
+
+            action_buttons.append(
+                ft.IconButton(
+                    icon=ft.Icons.DELETE_FOREVER,
+                    tooltip="Delete permanently",
+                    on_click=lambda e, file_info=file_info: self.delete_from_modal(file_info)
+                )
+            )
+
+            archive_item = ft.ListTile(
+                title=ft.Text(file_info['title']),
+                subtitle=ft.Text(subtitle_text, size=10) if subtitle_text else None,
+                trailing=ft.Row(action_buttons, tight=True)
+            )
+            archive_file_controls.append(archive_item)
+
+        # Update the container
+        if archive_file_controls:
+            self.archive_list_container.controls = archive_file_controls
+        else:
+            self.archive_list_container.controls = [
+                ft.Text("No matching archived files found",
+                       text_align=ft.TextAlign.CENTER,
+                       color=ft.Colors.GREY_600)
+            ]
+
+        # Update file count
+        if hasattr(self, 'archive_file_count_text'):
+            self.archive_file_count_text.value = f"Showing {len(files_to_display)} of {len(self.all_archived_files)} archived files"
+
+        if hasattr(self, 'page'):
+            self.page.update()
+
+    def filter_archived_files(self, e=None):
+        """Filter archived files based on filename and tag criteria."""
+        if not hasattr(self, 'all_archived_files'):
+            return
+
+        filename_query = self.filename_filter.value.lower() if self.filename_filter.value else ""
+        tag_query = self.tag_filter.value.lower() if self.tag_filter.value else ""
+
+        filtered_files = []
+        for file_info in self.all_archived_files:
+            filename_match = filename_query == "" or filename_query in file_info['title'].lower()
+
+            tag_match = True
+            if tag_query:
+                file_tags = [tag.lower() for tag in file_info.get('tags', [])]
+                tag_match = any(tag_query in tag for tag in file_tags)
+
+            if filename_match and tag_match:
+                filtered_files.append(file_info)
+
+        self.update_archive_file_list(filtered_files)
+
+    def clear_archive_filters(self, e=None):
+        """Clear all archive filters and show all files."""
+        if hasattr(self, 'filename_filter'):
+            self.filename_filter.value = ""
+        if hasattr(self, 'tag_filter'):
+            self.tag_filter.value = ""
+
+        if hasattr(self, 'all_archived_files'):
+            self.update_archive_file_list(self.all_archived_files)
 
     def show_error_dialog(self, title: str, message: str):
         """エラーダイアログを表示する"""
