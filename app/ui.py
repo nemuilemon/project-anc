@@ -244,7 +244,7 @@ class AppUI:
     Callbacks:
         各操作に対応するコールバック関数群（on_open_file, on_save_file等）
     """
-    def __init__(self, page: ft.Page, on_open_file, on_save_file, on_analyze_tags, on_refresh_files, on_update_tags, on_cancel_tags, on_rename_file, on_close_tab, on_create_file, on_archive_file, on_delete_file, on_run_ai_analysis=None):
+    def __init__(self, page: ft.Page, on_open_file, on_save_file, on_analyze_tags, on_refresh_files, on_update_tags, on_cancel_tags, on_rename_file, on_close_tab, on_create_file, on_archive_file, on_delete_file, on_run_ai_analysis=None, on_run_automation=None, on_cancel_automation=None, on_get_automation_preview=None, available_ai_functions=None):
         self.page = page
         self.on_open_file = on_open_file
         self.on_save_file = on_save_file
@@ -258,11 +258,130 @@ class AppUI:
         self.on_create_file = on_create_file
         self.on_archive_file = on_archive_file
         self.on_delete_file = on_delete_file
-        
+
+        # Automation callbacks
+        self.on_run_automation = on_run_automation
+        self.on_cancel_automation = on_cancel_automation
+        self.on_get_automation_preview = on_get_automation_preview
+
+        # Store available AI functions for dynamic dropdown
+        self.available_ai_functions = available_ai_functions or []
+
         self.tabs = ft.Tabs(selected_index=0, expand=True, tabs=[], on_change=self.on_tab_change)
         # ファイルリスト用のコンテナ
         self.file_list_column = ft.Column(scroll=ft.ScrollMode.AUTO, expand=True)
         self.file_list = self.file_list_column
+
+        # Current view state - "files" or "automation"
+        self.current_view = "files"
+
+        # ========== NAVIGATION CONTROLS ==========
+        self.files_nav_button = ft.ElevatedButton(
+            text="Files",
+            icon=ft.Icons.FOLDER,
+            on_click=self.switch_to_files_view,
+            style=ft.ButtonStyle(bgcolor=ft.Colors.BLUE)  # Active initially
+        )
+
+        self.automation_nav_button = ft.ElevatedButton(
+            text="Automation",
+            icon=ft.Icons.SMART_TOY,
+            on_click=self.switch_to_automation_view,
+            style=ft.ButtonStyle(bgcolor=ft.Colors.GREY)  # Inactive initially
+        )
+
+        # ========== AUTOMATION UI COMPONENTS ==========
+        self.automation_task_dropdown = ft.Dropdown(
+            label="Select Automation Task",
+            width=280,  # Adjusted to fit within sidebar
+            options=[
+                ft.dropdown.Option("batch_tag_untagged", "Batch Tag Untagged Files"),
+                ft.dropdown.Option("batch_summarize", "Batch Generate Summaries"),
+                ft.dropdown.Option("batch_sentiment", "Batch Sentiment Analysis")
+            ],
+            on_change=self.automation_task_changed
+        )
+
+        self.automation_preview_text = ft.Text(
+            "Select a task to see preview information.",
+            size=12,
+            color=ft.Colors.GREY_600
+        )
+
+        self.run_automation_button = ft.ElevatedButton(
+            text="Run Automation",
+            icon=ft.Icons.PLAY_ARROW,
+            on_click=self.run_automation_clicked,
+            disabled=True,
+            color=ft.Colors.GREEN
+        )
+
+        self.cancel_automation_button = ft.ElevatedButton(
+            text="Cancel",
+            icon=ft.Icons.STOP,
+            on_click=lambda e: self.on_cancel_automation(),
+            visible=False,
+            color=ft.Colors.RED
+        )
+
+        # Automation progress indicators
+        self.automation_progress_bar = ft.ProgressBar(
+            value=0,
+            visible=False,
+            width=400,
+            height=6,
+            bgcolor=ft.Colors.GREY_300,
+            color=ft.Colors.GREEN
+        )
+
+        self.automation_status_text = ft.Text(
+            "",
+            size=14,
+            visible=False
+        )
+
+        # Container for the automation view
+        self.automation_container = ft.Container(
+            content=ft.Column([
+                ft.Text("🤖 AI Automation Center", size=24, weight=ft.FontWeight.BOLD),
+                ft.Divider(height=20),
+
+                ft.Text("Available Automation Tasks:", size=16, weight=ft.FontWeight.BOLD),
+                self.automation_task_dropdown,
+                ft.Container(height=10),
+
+                # Preview section
+                ft.Container(
+                    content=ft.Column([
+                        ft.Text("Task Preview:", size=14, weight=ft.FontWeight.BOLD),
+                        self.automation_preview_text,
+                    ]),
+                    bgcolor=ft.Colors.BLUE_50,
+                    padding=15,
+                    border_radius=8,
+                    border=ft.border.all(1, ft.Colors.BLUE_200)
+                ),
+
+                ft.Container(height=20),
+
+                # Control section
+                ft.Row([
+                    self.run_automation_button,
+                    self.cancel_automation_button,
+                ], spacing=10),
+
+                ft.Container(height=20),
+
+                # Progress section
+                ft.Column([
+                    self.automation_status_text,
+                    self.automation_progress_bar,
+                ], spacing=10),
+
+            ], scroll=ft.ScrollMode.AUTO, spacing=15, expand=True),
+            visible=True,  # Always visible when used as content
+            padding=20
+        )
         
         # アーカイブファイル表示ボタン
         self.show_archived_button = ft.ElevatedButton(
@@ -272,19 +391,8 @@ class AppUI:
             tooltip="Open Archive Explorer to view archived files"
         )
         
-        # AI Analysis dropdown and button
-        self.ai_analysis_dropdown = ft.Dropdown(
-            label="AI Analysis Type",
-            width=150,
-            value="tagging",
-            options=[
-                ft.dropdown.Option("tagging", "Tags"),
-                ft.dropdown.Option("summarization", "Summary"),
-                ft.dropdown.Option("sentiment", "Sentiment")
-            ],
-            dense=True,
-            on_change=self.ai_analysis_type_changed
-        )
+        # AI Analysis dropdown and button - dynamically populated
+        self.ai_analysis_dropdown = self._create_ai_analysis_dropdown()
         
         self.analyze_button = ft.ElevatedButton(
             "Analyze Tags",
@@ -344,13 +452,82 @@ class AppUI:
             ]
         )
         
-        self.sidebar = ft.Container(
+        # Files view container (current sidebar content)
+        self.files_container = ft.Container(
             content=ft.Column([
                 self.show_archived_button,
                 ft.Divider(height=10),
                 self.file_list
             ]),
-            width=250, padding=10, bgcolor=ft.Colors.BLACK12
+            expand=True
+        )
+
+        # Dynamic content container that will switch between files and automation
+        self.sidebar_content_container = ft.Container(
+            content=self.files_container,  # Initially show files
+            expand=True
+        )
+
+        self.sidebar = ft.Container(
+            content=ft.Column([
+                # Navigation controls
+                ft.Row([
+                    self.files_nav_button,
+                    self.automation_nav_button
+                ], spacing=5),
+                ft.Divider(height=10),
+
+                # Dynamic content container
+                self.sidebar_content_container
+            ]),
+            width=320,  # Increased width for automation UI
+            padding=10,
+            bgcolor=ft.Colors.BLACK12
+        )
+
+    def _create_ai_analysis_dropdown(self):
+        """Dynamically create AI analysis dropdown based on available plugins."""
+        # Generate dropdown options from available AI functions
+        dropdown_options = []
+        default_value = None
+
+        if self.available_ai_functions:
+            for plugin_config in self.available_ai_functions:
+                plugin_name = plugin_config.get("name", "unknown")
+                plugin_description = plugin_config.get("description", plugin_name.title())
+
+                # Create user-friendly display text
+                if plugin_name == "tagging":
+                    display_text = "Tags"
+                elif plugin_name == "summarization":
+                    display_text = "Summary"
+                elif plugin_name == "sentiment":
+                    display_text = "Sentiment"
+                else:
+                    # For any custom plugins, use description or capitalize name
+                    display_text = plugin_description if len(plugin_description) < 20 else plugin_name.replace("_", " ").title()
+
+                dropdown_options.append(ft.dropdown.Option(plugin_name, display_text))
+
+                # Set default to tagging if available, otherwise first plugin
+                if plugin_name == "tagging" or default_value is None:
+                    default_value = plugin_name
+        else:
+            # Fallback if no plugins found
+            dropdown_options = [
+                ft.dropdown.Option("tagging", "Tags"),
+                ft.dropdown.Option("summarization", "Summary"),
+                ft.dropdown.Option("sentiment", "Sentiment")
+            ]
+            default_value = "tagging"
+
+        return ft.Dropdown(
+            label="AI Analysis Type",
+            width=150,
+            value=default_value,
+            options=dropdown_options,
+            dense=True,
+            on_change=self.ai_analysis_type_changed
         )
 
     def start_analysis_view(self):
@@ -386,10 +563,17 @@ class AppUI:
         """進捗を更新する（0-100の範囲）"""
         if self.file_progress_bar.visible:
             self.file_progress_bar.value = progress / 100
-        
+
+        # Also update automation progress if visible
+        if self.automation_progress_bar.visible:
+            self.automation_progress_bar.value = progress / 100
+
         if status_text:
-            self.operation_status_text.value = status_text
-        
+            if self.operation_status_text.visible:
+                self.operation_status_text.value = status_text
+            if self.automation_status_text.visible:
+                self.automation_status_text.value = status_text
+
         self.page.update()
     
     def hide_progress_indicators(self):
@@ -1087,6 +1271,158 @@ class AppUI:
         if self.tabs.tabs and len(self.tabs.tabs) > self.tabs.selected_index:
              return self.tabs.tabs[self.tabs.selected_index]
         return None
+
+    # ========== AUTOMATION UI METHODS ==========
+
+    def switch_to_files_view(self, e=None):
+        """ファイル表示ビューに切り替え"""
+        self.current_view = "files"
+        self.sidebar_content_container.content = self.files_container
+
+        # Update button styles
+        self.files_nav_button.style = ft.ButtonStyle(bgcolor=ft.Colors.BLUE)
+        self.automation_nav_button.style = ft.ButtonStyle(bgcolor=ft.Colors.GREY)
+
+        self.page.update()
+
+    def switch_to_automation_view(self, e=None):
+        """自動化ビューに切り替え"""
+        self.current_view = "automation"
+        self.sidebar_content_container.content = self.automation_container
+
+        # Update button styles
+        self.files_nav_button.style = ft.ButtonStyle(bgcolor=ft.Colors.GREY)
+        self.automation_nav_button.style = ft.ButtonStyle(bgcolor=ft.Colors.BLUE)
+
+        self.page.update()
+
+    def automation_task_changed(self, e):
+        """自動化タスクが選択された時の処理"""
+        if e.control.value and self.on_get_automation_preview:
+            try:
+                preview_info = self.on_get_automation_preview(e.control.value)
+
+                if preview_info:
+                    file_count = preview_info.get("file_count", 0)
+                    message = preview_info.get("message", "")
+                    task_name = preview_info.get("task_name", "")
+
+                    if file_count > 0:
+                        file_list = preview_info.get("file_list", [])
+                        file_list_text = "\n".join([f"• {name}" for name in file_list[:10]])  # Show first 10
+                        if len(file_list) > 10:
+                            file_list_text += f"\n... and {len(file_list) - 10} more files"
+
+                        preview_text = f"{message}\n\nFiles to be processed:\n{file_list_text}"
+                    else:
+                        preview_text = message
+
+                    self.automation_preview_text.value = preview_text
+                    self.run_automation_button.disabled = (file_count == 0)
+                else:
+                    self.automation_preview_text.value = "Could not load preview information."
+                    self.run_automation_button.disabled = True
+
+            except Exception as ex:
+                print(f"Error updating automation preview: {ex}")
+                self.automation_preview_text.value = f"Error loading preview: {str(ex)}"
+                self.run_automation_button.disabled = True
+        else:
+            self.automation_preview_text.value = "Select a task to see preview information."
+            self.run_automation_button.disabled = True
+
+        self.page.update()
+
+    def run_automation_clicked(self, e):
+        """自動化実行ボタンクリック処理"""
+        selected_task = self.automation_task_dropdown.value
+        if selected_task and self.on_run_automation:
+            self.on_run_automation(selected_task)
+
+    def start_automation_view(self):
+        """自動化実行中のUI表示に切り替え"""
+        self.run_automation_button.visible = False
+        self.cancel_automation_button.visible = True
+        self.automation_task_dropdown.disabled = True
+        self.automation_progress_bar.visible = True
+        self.automation_status_text.visible = True
+        self.page.update()
+
+    def stop_automation_view(self):
+        """自動化完了後の通常UI表示に戻す"""
+        self.run_automation_button.visible = True
+        self.cancel_automation_button.visible = False
+        self.automation_task_dropdown.disabled = False
+        self.automation_progress_bar.visible = False
+        self.automation_progress_bar.value = 0
+        self.automation_status_text.visible = False
+        self.page.update()
+
+    def show_batch_results(self, result):
+        """バッチ処理結果表示ダイアログ"""
+        # Determine dialog styling based on success
+        if result.get("success", False):
+            title_icon = "✅"
+            title_color = ft.Colors.GREEN
+        else:
+            title_icon = "❌"
+            title_color = ft.Colors.RED
+
+        # Build content widgets
+        content_widgets = [
+            ft.Text(
+                f"Success: {result.get('success_count', 0)} files",
+                color=ft.Colors.GREEN,
+                weight=ft.FontWeight.BOLD
+            )
+        ]
+
+        if result.get("failed_count", 0) > 0:
+            content_widgets.append(
+                ft.Text(
+                    f"Failed: {result.get('failed_count', 0)} files",
+                    color=ft.Colors.RED,
+                    weight=ft.FontWeight.BOLD
+                )
+            )
+
+        content_widgets.append(ft.Divider(height=10))
+
+        # Show details for first few files
+        details = result.get("details", [])
+        for i, detail in enumerate(details[:10]):  # Show first 10 results
+            status_icon = "✅" if detail.get("success", False) else "❌"
+            content_widgets.append(
+                ft.Text(f"{status_icon} {detail.get('file', 'Unknown')}: {detail.get('message', 'No message')}")
+            )
+
+        if len(details) > 10:
+            content_widgets.append(ft.Text(f"... and {len(details) - 10} more files"))
+
+        def close_dialog(e):
+            if hasattr(self, 'batch_results_dialog'):
+                self.page.overlay.remove(self.batch_results_dialog)
+                self.page.update()
+
+        self.batch_results_dialog = ft.AlertDialog(
+            title=ft.Row([
+                ft.Icon(name=ft.Icons.SMART_TOY, color=title_color),
+                ft.Text(f"{title_icon} Batch Automation Results", color=title_color)
+            ]),
+            content=ft.Column(
+                content_widgets,
+                height=400,
+                scroll=ft.ScrollMode.AUTO
+            ),
+            actions=[
+                ft.TextButton("OK", on_click=close_dialog)
+            ],
+            actions_alignment=ft.MainAxisAlignment.END
+        )
+
+        self.page.overlay.append(self.batch_results_dialog)
+        self.batch_results_dialog.open = True
+        self.page.update()
 
     def build(self):
         self.tabs.tabs.append(

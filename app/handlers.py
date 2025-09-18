@@ -508,10 +508,10 @@ class AppHandlers:
         """ファイル削除処理のハンドラ"""
         try:
             success, message = self.app_logic.delete_file(file_path)
-            
+
             self.page.snack_bar = ft.SnackBar(content=ft.Text(message))
             self.page.snack_bar.open = True
-            
+
             if success:
                 # ファイルリストを更新
                 try:
@@ -519,7 +519,7 @@ class AppHandlers:
                     self.app_ui.update_file_list(all_files)
                 except Exception as list_error:
                     print(f"Error updating file list after delete: {list_error}")
-                
+
                 # 削除されたファイルが現在開いているタブにある場合は閉じる
                 try:
                     for i, tab in enumerate(self.app_ui.tabs.tabs):
@@ -536,11 +536,132 @@ class AppHandlers:
                             break
                 except Exception as tab_error:
                     print(f"Error closing tab after delete: {tab_error}")
-            
+
             self.page.update()
-            
+
         except Exception as e:
             print(f"Error in handle_delete_file: {e}")
             self.page.snack_bar = ft.SnackBar(content=ft.Text(f"削除処理エラー: {str(e)}"))
             self.page.snack_bar.open = True
             self.page.update()
+
+    # ========== AUTOMATION HANDLERS ==========
+
+    def handle_run_automation(self, task_type: str):
+        """自動化タスク実行のハンドラ"""
+        # すでに分析中なら、新しいタスクを開始しない
+        if self.is_analyzing:
+            self.page.snack_bar = ft.SnackBar(content=ft.Text("現在、別の処理を実行中です。"))
+            self.page.snack_bar.open = True
+            self.page.update()
+            return
+
+        self.is_analyzing = True
+        self.cancel_event.clear()
+
+        # タスクタイプに応じたメッセージを設定
+        task_messages = {
+            "batch_tag_untagged": "未タグファイルを自動タグ付け中...",
+            "batch_summarize": "ファイルの要約を一括生成中...",
+            "batch_sentiment": "ファイルの感情分析を一括実行中..."
+        }
+
+        initial_message = task_messages.get(task_type, "自動化タスクを実行中...")
+
+        # UIの自動化ビューを開始
+        self.app_ui.start_automation_view()
+        self.app_ui.show_progress_indicators(initial_message, True)
+
+        def progress_callback(progress, message):
+            """進捗コールバック - プログレスバーとメッセージを更新"""
+            self.app_ui.update_progress(progress, message)
+
+        def completion_callback(result):
+            """完了コールバック - 結果を表示し、UIを復元"""
+            self.is_analyzing = False
+            self.app_ui.stop_automation_view()
+
+            # バッチ処理結果を表示
+            self.app_ui.show_batch_results(result)
+
+            # 成功時はファイルリストを更新
+            if result.get("success", False) and result.get("success_count", 0) > 0:
+                try:
+                    all_files = self.app_logic.get_file_list()
+                    self.app_ui.update_file_list(all_files)
+                except Exception as list_error:
+                    print(f"Error updating file list after automation: {list_error}")
+
+            self.page.update()
+
+        def error_callback(error):
+            """エラーコールバック - エラーを表示し、UIを復元"""
+            from log_utils import log_error
+            self.is_analyzing = False
+            self.app_ui.stop_automation_view()
+            log_error(f"Batch automation failed for task_type '{task_type}': {error}")
+            print(f"Error in automation task: {error}")
+            self.page.snack_bar = ft.SnackBar(content=ft.Text(f"自動化タスクエラー: {str(error)}"))
+            self.page.snack_bar.open = True
+            self.page.update()
+
+        # バッチ処理を非同期で実行
+        self.app_logic.run_batch_processing_async(
+            task_type,
+            progress_callback=progress_callback,
+            completion_callback=completion_callback,
+            error_callback=error_callback,
+            cancel_event=self.cancel_event
+        )
+
+    def handle_cancel_automation(self):
+        """自動化タスクキャンセル処理のハンドラ"""
+        if self.is_analyzing:
+            print("Automation cancellation requested by user.")
+            self.cancel_event.set()
+            self.app_ui.update_progress(0, "Cancelling automation...")
+
+    def handle_get_automation_preview(self, task_type: str):
+        """自動化タスクのプレビュー情報取得ハンドラ"""
+        try:
+            # タスクタイプに応じて対象ファイルを取得
+            if task_type == "batch_tag_untagged":
+                target_files = self.app_logic.get_untagged_files()
+                task_name = "未タグファイルの自動タグ付け"
+            elif task_type == "batch_summarize":
+                target_files = self.app_logic.get_files_without_analysis("summarization")
+                task_name = "ファイル要約の一括生成"
+            elif task_type == "batch_sentiment":
+                target_files = self.app_logic.get_files_without_analysis("sentiment")
+                task_name = "ファイル感情分析の一括実行"
+            else:
+                return {
+                    "task_name": "不明なタスク",
+                    "file_count": 0,
+                    "file_list": [],
+                    "message": "不明なタスクタイプです。"
+                }
+
+            file_names = [f.get('title', 'Unknown') for f in target_files]
+            file_count = len(target_files)
+
+            if file_count == 0:
+                message = f"{task_name}の対象ファイルはありません。"
+            else:
+                message = f"{file_count}個のファイルが処理対象です。"
+
+            return {
+                "task_name": task_name,
+                "file_count": file_count,
+                "file_list": file_names,
+                "message": message
+            }
+
+        except Exception as e:
+            print(f"Error getting automation preview: {e}")
+            return {
+                "task_name": "エラー",
+                "file_count": 0,
+                "file_list": [],
+                "message": f"プレビュー取得エラー: {str(e)}"
+            }

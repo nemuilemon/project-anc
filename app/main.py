@@ -67,6 +67,10 @@ def main(page: ft.Page):
             try:
                 app_logic = AppLogic(db)
                 app_logger.main_logger.info("Application logic initialized successfully")
+
+                # Get available AI plugins for UI dropdown
+                available_ai_functions = app_logic.get_available_ai_functions()
+                app_logger.main_logger.info(f"Found {len(available_ai_functions)} AI analysis plugins")
             except Exception as e:
                 app_logger.log_error(e, "app_logic_initialization")
                 page.snack_bar = ft.SnackBar(content=ft.Text(f"Application logic initialization failed: {str(e)}"))
@@ -93,7 +97,7 @@ def main(page: ft.Page):
     try:
         app_ui = AppUI(
             page,
-            on_open_file=handlers.handle_open_file, 
+            on_open_file=handlers.handle_open_file,
             on_save_file=handlers.handle_save_file,
             on_analyze_tags=handlers.handle_analyze_tags,
             on_refresh_files=handlers.handle_refresh_files,
@@ -104,7 +108,13 @@ def main(page: ft.Page):
             on_create_file=handlers.handle_create_file,
             on_archive_file=handlers.handle_archive_file,
             on_delete_file=handlers.handle_delete_file,
-            on_run_ai_analysis=handlers.handle_ai_analysis
+            on_run_ai_analysis=handlers.handle_ai_analysis,
+            # New automation callbacks
+            on_run_automation=handlers.handle_run_automation,
+            on_cancel_automation=handlers.handle_cancel_automation,
+            on_get_automation_preview=handlers.handle_get_automation_preview,
+            # Available AI functions for dynamic dropdown
+            available_ai_functions=available_ai_functions
         )
         
         # Now update the handlers with the initialized app_ui

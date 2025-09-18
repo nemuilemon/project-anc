@@ -938,11 +938,244 @@ class AppLogic:
             error_callback=error_callback
         )
 
+    # 4. Batch Automation System - Target Identification and Processing
+
+    def get_untagged_files(self):
+        """未タグ付けファイルの一覧を取得（バッチ処理用）。
+
+        Returns:
+            list: タグが空のアクティブファイルのリスト
+        """
+        File = Query()
+        # タグが空のリスト、またはタグフィールドが存在しないファイルを検索
+        untagged_files = self.db.search(
+            (File.status == 'active') &
+            ((~File.tags.exists()) | (File.tags == []))
+        )
+        return untagged_files
+
+    def get_files_without_analysis(self, analysis_type: str):
+        """指定した分析が未実行のファイル一覧を取得（バッチ処理用）。
+
+        Args:
+            analysis_type (str): 分析タイプ ("summarization", "sentiment")
+
+        Returns:
+            list: 指定した分析が未実行のアクティブファイルのリスト
+        """
+        File = Query()
+        # AI分析データが存在しない、または指定タイプの分析が未実行のファイル
+        files_without_analysis = []
+        active_files = self.db.search(File.status == 'active')
+
+        for file_doc in active_files:
+            ai_analysis = file_doc.get('ai_analysis', {})
+            if analysis_type not in ai_analysis:
+                files_without_analysis.append(file_doc)
+
+        return files_without_analysis
+
+    def run_batch_processing(self, task_type: str, progress_callback=None, cancel_event=None):
+        """バッチ処理を実行する汎用的なエンジン。
+
+        Args:
+            task_type (str): バッチタスクのタイプ
+                           ("batch_tag_untagged", "batch_summarize", "batch_sentiment")
+            progress_callback (Callable, optional): 進捗更新コールバック
+            cancel_event (threading.Event, optional): キャンセル用イベント
+
+        Returns:
+            dict: バッチ処理結果の詳細
+                - success (bool): 全体の成功フラグ
+                - processed_count (int): 処理されたファイル数
+                - success_count (int): 成功したファイル数
+                - failed_count (int): 失敗したファイル数
+                - message (str): 結果メッセージ
+                - details (list): 各ファイルの詳細結果
+        """
+        try:
+            # タスクタイプに応じてターゲットファイルを取得
+            if task_type == "batch_tag_untagged":
+                target_files = self.get_untagged_files()
+                analysis_type = "tagging"
+                task_name = "タグ付け"
+            elif task_type == "batch_summarize":
+                target_files = self.get_files_without_analysis("summarization")
+                analysis_type = "summarization"
+                task_name = "要約生成"
+            elif task_type == "batch_sentiment":
+                target_files = self.get_files_without_analysis("sentiment")
+                analysis_type = "sentiment"
+                task_name = "感情分析"
+            else:
+                return {
+                    "success": False,
+                    "processed_count": 0,
+                    "success_count": 0,
+                    "failed_count": 0,
+                    "message": f"不明なタスクタイプ: {task_type}",
+                    "details": []
+                }
+
+            if not target_files:
+                return {
+                    "success": True,
+                    "processed_count": 0,
+                    "success_count": 0,
+                    "failed_count": 0,
+                    "message": f"{task_name}対象のファイルはありません。",
+                    "details": []
+                }
+
+            total_files = len(target_files)
+            processed_count = 0
+            success_count = 0
+            failed_count = 0
+            details = []
+
+            if progress_callback:
+                progress_callback(0, f"{task_name}を開始中... (0/{total_files})")
+
+            # 各ファイルを順次処理
+            for i, file_doc in enumerate(target_files):
+                # キャンセル確認
+                if cancel_event and cancel_event.is_set():
+                    return {
+                        "success": False,
+                        "processed_count": processed_count,
+                        "success_count": success_count,
+                        "failed_count": failed_count,
+                        "message": f"{task_name}がキャンセルされました。",
+                        "details": details
+                    }
+
+                file_path = file_doc['path']
+                file_name = file_doc['title']
+
+                try:
+                    # ファイル内容を読み取り
+                    content = self.read_file(file_path)
+                    if content is None:
+                        details.append({
+                            "file": file_name,
+                            "success": False,
+                            "message": "ファイル読み取りエラー"
+                        })
+                        failed_count += 1
+                        continue
+
+                    # AI分析を実行
+                    if analysis_type == "tagging":
+                        success, message = self.analyze_and_update_tags(file_path, content, cancel_event)
+                    else:
+                        # 他の分析タイプの処理
+                        result = self.run_ai_analysis(content, analysis_type)
+                        success = result["success"]
+                        message = result["message"]
+
+                        # 成功した場合、データベースに結果を保存
+                        if success:
+                            File = Query()
+                            doc = self.db.get(File.path == file_path)
+                            if doc:
+                                analysis_data = doc.get("ai_analysis", {})
+                                analysis_data[analysis_type] = {
+                                    "data": result["data"],
+                                    "timestamp": time.time(),
+                                    "processing_time": result["processing_time"]
+                                }
+                                self.db.update({"ai_analysis": analysis_data}, File.path == file_path)
+
+                    if success:
+                        success_count += 1
+                    else:
+                        failed_count += 1
+
+                    details.append({
+                        "file": file_name,
+                        "success": success,
+                        "message": message
+                    })
+
+                except Exception as e:
+                    failed_count += 1
+                    details.append({
+                        "file": file_name,
+                        "success": False,
+                        "message": f"処理エラー: {str(e)}"
+                    })
+
+                processed_count += 1
+
+                # 進捗更新
+                if progress_callback:
+                    progress = int((processed_count / total_files) * 100)
+                    progress_callback(progress, f"{task_name}中... ({processed_count}/{total_files})")
+
+            # 最終結果
+            overall_success = failed_count == 0
+            if overall_success:
+                result_message = f"{task_name}が完了しました。成功: {success_count}件"
+            else:
+                result_message = f"{task_name}が完了しました。成功: {success_count}件、失敗: {failed_count}件"
+
+            return {
+                "success": overall_success,
+                "processed_count": processed_count,
+                "success_count": success_count,
+                "failed_count": failed_count,
+                "message": result_message,
+                "details": details
+            }
+
+        except Exception as e:
+            return {
+                "success": False,
+                "processed_count": 0,
+                "success_count": 0,
+                "failed_count": 0,
+                "message": f"バッチ処理でエラーが発生しました: {str(e)}",
+                "details": []
+            }
+
+    def run_batch_processing_async(self, task_type: str, progress_callback=None,
+                                   completion_callback=None, error_callback=None,
+                                   cancel_event=None) -> str:
+        """バッチ処理を非同期で実行。
+
+        Args:
+            task_type (str): バッチタスクのタイプ
+            progress_callback (Callable, optional): 進捗更新コールバック
+            completion_callback (Callable, optional): 完了時コールバック
+            error_callback (Callable, optional): エラー時コールバック
+            cancel_event (threading.Event, optional): キャンセル用イベント
+
+        Returns:
+            str: 操作ID（非同期操作の追跡用）
+        """
+        def _async_batch_process():
+            def combined_progress_callback(progress, message):
+                if progress_callback:
+                    progress_callback(progress, message)
+
+            return self.run_batch_processing(
+                task_type,
+                progress_callback=combined_progress_callback,
+                cancel_event=cancel_event
+            )
+
+        return async_manager.run_async_operation(
+            _async_batch_process,
+            progress_callback=None,  # We handle progress in the inner function
+            completion_callback=completion_callback,
+            error_callback=error_callback
+        )
+
     # 4. 指揮系統の整理：使わなくなった検索機能を一旦コメントアウト
     # def search_files(self, keyword):
     #     if not keyword:
     #         return self.get_file_list()
-        
+
     #     File = Query()
     #     results = self.db.search(
     #         (File.title.search(keyword)) | (File.tags.any(Query().search(keyword)))
