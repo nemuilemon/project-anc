@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # Import test modules
 from tests.test_base_plugin import TestAnalysisResult, TestBaseAnalysisPlugin
 from tests.test_ai_manager import TestAIAnalysisManager
-from tests.test_plugins import TestTaggingPlugin, TestSummarizationPlugin, TestSentimentPlugin, TestPluginIntegration
+from tests.test_plugins import TestTaggingPlugin, TestSummarizationPlugin, TestPluginIntegration
 from tests.test_integration import TestAIAnalysisIntegration, TestBackwardsCompatibility
 
 
@@ -68,7 +68,6 @@ def create_test_suite():
         TestAIAnalysisManager,
         TestTaggingPlugin,
         TestSummarizationPlugin,
-        TestSentimentPlugin,
         TestPluginIntegration,
         TestAIAnalysisIntegration,
         TestBackwardsCompatibility
@@ -178,7 +177,7 @@ def run_specific_test_category(category):
     category_map = {
         'base': [TestAnalysisResult, TestBaseAnalysisPlugin],
         'manager': [TestAIAnalysisManager],
-        'plugins': [TestTaggingPlugin, TestSummarizationPlugin, TestSentimentPlugin, TestPluginIntegration],
+        'plugins': [TestTaggingPlugin, TestSummarizationPlugin, TestPluginIntegration],
         'integration': [TestAIAnalysisIntegration, TestBackwardsCompatibility]
     }
     

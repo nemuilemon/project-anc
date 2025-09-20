@@ -14,7 +14,7 @@ from tinydb import TinyDB
 import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from ai_analysis import AIAnalysisManager, TaggingPlugin, SummarizationPlugin, SentimentPlugin
+from ai_analysis import AIAnalysisManager, TaggingPlugin, SummarizationPlugin
 from logic import AppLogic
 
 
@@ -54,7 +54,7 @@ class TestAIAnalysisIntegration(unittest.TestCase):
         
         # Check that plugins are registered
         available_plugins = self.app_logic.ai_manager.get_available_plugins()
-        expected_plugins = ["tagging", "summarization", "sentiment"]
+        expected_plugins = ["tagging", "summarization"]
         
         for plugin in expected_plugins:
             self.assertIn(plugin, available_plugins)
@@ -64,7 +64,7 @@ class TestAIAnalysisIntegration(unittest.TestCase):
         functions = self.app_logic.get_available_ai_functions()
         
         self.assertIsInstance(functions, list)
-        self.assertEqual(len(functions), 3)  # tagging, summarization, sentiment
+        self.assertEqual(len(functions), 2)  # tagging, summarization
         
         # Check that each function has required properties
         for func in functions:
@@ -103,23 +103,6 @@ class TestAIAnalysisIntegration(unittest.TestCase):
         self.assertIn("summary", result["data"])
         self.assertEqual(result["data"]["summary"], "This is a test summary of the content.")
         self.assertEqual(result["plugin_name"], "summarization")
-    
-    @patch('ai_analysis.plugins.sentiment_plugin.ollama.generate')
-    def test_run_ai_analysis_sentiment(self, mock_generate):
-        """Test running AI analysis for sentiment."""
-        mock_generate.return_value = {
-            'response': 'ポジティブ - この文章は明るく前向きな内容です。'
-        }
-        
-        result = self.app_logic.run_ai_analysis(
-            "I am very happy and excited about this project!",
-            "sentiment"
-        )
-        
-        self.assertTrue(result["success"])
-        self.assertIn("overall_sentiment", result["data"])
-        self.assertEqual(result["data"]["overall_sentiment"], "ポジティブ")
-        self.assertEqual(result["plugin_name"], "sentiment")
     
     def test_run_ai_analysis_invalid_plugin(self):
         """Test running AI analysis with invalid plugin name."""
@@ -269,29 +252,24 @@ class TestAIAnalysisIntegration(unittest.TestCase):
     def test_multiple_analysis_types(self):
         """Test running multiple analysis types on the same content."""
         content = "This is a comprehensive test content for multiple analysis types. " * 5
-        
+
         with patch('ai_analysis.plugins.tagging_plugin.ollama.generate') as mock_tag, \
-             patch('ai_analysis.plugins.summarization_plugin.ollama.generate') as mock_sum, \
-             patch('ai_analysis.plugins.sentiment_plugin.ollama.generate') as mock_sent:
-            
+             patch('ai_analysis.plugins.summarization_plugin.ollama.generate') as mock_sum:
+
             mock_tag.return_value = {'response': 'Multi, Analysis, Test'}
             mock_sum.return_value = {'response': 'This is a multi-analysis test summary.'}
-            mock_sent.return_value = {'response': 'ニュートラル - テスト用の文章です。'}
-            
-            # Run all three analysis types
+
+            # Run both analysis types
             tag_result = self.app_logic.run_ai_analysis(content, "tagging")
             summary_result = self.app_logic.run_ai_analysis(content, "summarization")
-            sentiment_result = self.app_logic.run_ai_analysis(content, "sentiment")
-            
-            # Check all succeeded
+
+            # Check both succeeded
             self.assertTrue(tag_result["success"])
             self.assertTrue(summary_result["success"])
-            self.assertTrue(sentiment_result["success"])
-            
+
             # Check each has expected data structure
             self.assertIn("tags", tag_result["data"])
             self.assertIn("summary", summary_result["data"])
-            self.assertIn("overall_sentiment", sentiment_result["data"])
 
 
 class TestBackwardsCompatibility(unittest.TestCase):

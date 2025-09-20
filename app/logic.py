@@ -11,7 +11,7 @@ from security import sanitize_filename, validate_file_path, safe_file_operation,
 from async_operations import async_manager, ProgressTracker, run_with_progress
 
 # Import new AI analysis system
-from ai_analysis import AIAnalysisManager, TaggingPlugin, SummarizationPlugin, SentimentPlugin
+from ai_analysis import AIAnalysisManager, TaggingPlugin, SummarizationPlugin, SentimentCompassPlugin
 
 class AppLogic:
     def __init__(self, db):
@@ -31,7 +31,7 @@ class AppLogic:
             # Register core analysis plugins
             self.ai_manager.register_plugin(TaggingPlugin())
             self.ai_manager.register_plugin(SummarizationPlugin())
-            self.ai_manager.register_plugin(SentimentPlugin())
+            self.ai_manager.register_plugin(SentimentCompassPlugin())
             
             print(f"Registered {len(self.ai_manager.get_available_plugins())} AI analysis plugins")
         except Exception as e:
@@ -316,7 +316,7 @@ class AppLogic:
         
         Args:
             content (str): 分析対象のテキスト内容
-            analysis_type (str): 分析タイプ ("tagging", "summarization", "sentiment")
+            analysis_type (str): 分析タイプ ("tagging", "summarization")
             **kwargs: 分析タイプ固有のパラメータ
         
         Returns:
@@ -882,7 +882,7 @@ class AppLogic:
         Args:
             path (str): 分析対象ファイルの絶対パス
             content (str): 分析するテキスト内容
-            analysis_type (str): 分析タイプ ("tagging", "summarization", "sentiment")
+            analysis_type (str): 分析タイプ ("tagging", "summarization")
             progress_callback (Callable, optional): 進捗更新コールバック
             completion_callback (Callable, optional): 完了時コールバック
             error_callback (Callable, optional): エラー時コールバック
@@ -958,7 +958,7 @@ class AppLogic:
         """指定した分析が未実行のファイル一覧を取得（バッチ処理用）。
 
         Args:
-            analysis_type (str): 分析タイプ ("summarization", "sentiment")
+            analysis_type (str): 分析タイプ ("summarization")
 
         Returns:
             list: 指定した分析が未実行のアクティブファイルのリスト
@@ -993,7 +993,7 @@ class AppLogic:
         """指定した分析が未実行のアーカイブファイル一覧を取得（バッチ処理用）。
 
         Args:
-            analysis_type (str): 分析タイプ ("summarization", "sentiment")
+            analysis_type (str): 分析タイプ ("summarization")
 
         Returns:
             list: 指定した分析が未実行のアーカイブファイルのリスト
@@ -1015,7 +1015,7 @@ class AppLogic:
 
         Args:
             task_type (str): バッチタスクのタイプ
-                           ("batch_tag_untagged", "batch_summarize", "batch_sentiment")
+                           ("batch_tag_untagged", "batch_summarize")
             progress_callback (Callable, optional): 進捗更新コールバック
             cancel_event (threading.Event, optional): キャンセル用イベント
 
@@ -1038,10 +1038,6 @@ class AppLogic:
                 target_files = self.get_files_without_analysis("summarization")
                 analysis_type = "summarization"
                 task_name = "要約生成"
-            elif task_type == "batch_sentiment":
-                target_files = self.get_files_without_analysis("sentiment")
-                analysis_type = "sentiment"
-                task_name = "感情分析"
             elif task_type == "batch_tag_archived":
                 target_files = self.get_untagged_archived_files()
                 analysis_type = "tagging"
@@ -1050,10 +1046,6 @@ class AppLogic:
                 target_files = self.get_archived_files_without_analysis("summarization")
                 analysis_type = "summarization"
                 task_name = "アーカイブファイルの要約生成"
-            elif task_type == "batch_sentiment_archived":
-                target_files = self.get_archived_files_without_analysis("sentiment")
-                analysis_type = "sentiment"
-                task_name = "アーカイブファイルの感情分析"
             else:
                 return {
                     "success": False,

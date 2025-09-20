@@ -18,7 +18,7 @@ class AnalysisResult:
     
     Attributes:
         success (bool): Whether the analysis completed successfully
-        data (Dict[str, Any]): Analysis results (tags, summary, sentiment, etc.)
+        data (Dict[str, Any]): Analysis results (tags, summary, etc.)
         message (str): Human-readable status/error message
         processing_time (float): Time taken for analysis in seconds
         plugin_name (str): Name of the plugin that performed the analysis
