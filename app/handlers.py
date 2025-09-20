@@ -228,23 +228,21 @@ class AppHandlers:
             self.page.snack_bar.open = True
             self.page.update()
             return
-        
+
         # 分析開始
         self.is_analyzing = True
         self.cancel_event.clear()
         self.app_ui.start_analysis_view()
-        
+
         # 分析タイプに応じたメッセージ
         analysis_messages = {
             "summarization": "Generating summary...",
-            "sentiment": "Analyzing sentiment...",
-            "tagging": "Extracting tags..."
+            "tagging": "Extracting tags...",
+            "sentiment_compass": "Analyzing growth dimensions..."
         }
-        
-        self.app_ui.show_progress_indicators(
-            analysis_messages.get(analysis_type, "Processing AI analysis..."), 
-            True
-        )
+
+        message = analysis_messages.get(analysis_type, "Processing AI analysis...")
+        self.app_ui.show_progress_indicators(message, True)
         
         def progress_callback(progress):
             status_messages = {
@@ -286,16 +284,36 @@ class AppHandlers:
             self.page.snack_bar.open = True
             self.page.update()
         
-        # 新しいAI分析システムを使用
-        self.app_logic.run_ai_analysis_async(
-            path,
-            content,
-            analysis_type,
-            progress_callback=progress_callback,
-            completion_callback=completion_callback,
-            error_callback=error_callback,
-            cancel_event=self.cancel_event
-        )
+        # Use simplified approach for sentiment_compass to avoid async issues
+        if analysis_type == "sentiment_compass":
+            # Run synchronously and call completion callback directly
+            try:
+                if progress_callback:
+                    progress_callback(50)
+
+                result = self.app_logic.run_ai_analysis(content, analysis_type)
+
+                if progress_callback:
+                    progress_callback(100)
+
+                # Call completion callback with the result
+                if completion_callback:
+                    completion_callback((result.get('success', False), result))
+
+            except Exception as e:
+                if error_callback:
+                    error_callback(e)
+        else:
+            # Use async system for other analysis types
+            self.app_logic.run_ai_analysis_async(
+                path,
+                content,
+                analysis_type,
+                progress_callback=progress_callback,
+                completion_callback=completion_callback,
+                error_callback=error_callback,
+                cancel_event=self.cancel_event
+            )
 
     def handle_refresh_files(self, show_archived=False):
         """ファイルリスト更新処理のハンドラ"""
@@ -563,10 +581,8 @@ class AppHandlers:
         task_messages = {
             "batch_tag_untagged": "未タグファイルを自動タグ付け中...",
             "batch_summarize": "ファイルの要約を一括生成中...",
-            "batch_sentiment": "ファイルの感情分析を一括実行中...",
             "batch_tag_archived": "アーカイブファイルを自動タグ付け中...",
             "batch_summarize_archived": "アーカイブファイルの要約を一括生成中...",
-            "batch_sentiment_archived": "アーカイブファイルの感情分析を一括実行中..."
         }
 
         initial_message = task_messages.get(task_type, "自動化タスクを実行中...")
@@ -634,18 +650,12 @@ class AppHandlers:
             elif task_type == "batch_summarize":
                 target_files = self.app_logic.get_files_without_analysis("summarization")
                 task_name = "ファイル要約の一括生成"
-            elif task_type == "batch_sentiment":
-                target_files = self.app_logic.get_files_without_analysis("sentiment")
-                task_name = "ファイル感情分析の一括実行"
             elif task_type == "batch_tag_archived":
                 target_files = self.app_logic.get_untagged_archived_files()
                 task_name = "アーカイブファイルの自動タグ付け"
             elif task_type == "batch_summarize_archived":
                 target_files = self.app_logic.get_archived_files_without_analysis("summarization")
                 task_name = "アーカイブファイル要約の一括生成"
-            elif task_type == "batch_sentiment_archived":
-                target_files = self.app_logic.get_archived_files_without_analysis("sentiment")
-                task_name = "アーカイブファイル感情分析の一括実行"
             else:
                 return {
                     "task_name": "不明なタスク",

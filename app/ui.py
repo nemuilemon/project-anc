@@ -1,6 +1,9 @@
 import flet as ft
 import os
+import threading
+import time
 from security import sanitize_filename, validate_search_input, SecurityError
+from settings_dialog import show_settings_dialog
 
 # --- New Approach: Inherit from a specific layout control (Flet >= 0.21.0) ---
 class FileListItem(ft.ListTile):
@@ -333,10 +336,8 @@ class AppUI:
             options=[
                 ft.dropdown.Option("batch_tag_untagged", "Batch Tag Untagged Files"),
                 ft.dropdown.Option("batch_summarize", "Batch Generate Summaries"),
-                ft.dropdown.Option("batch_sentiment", "Batch Sentiment Analysis"),
                 ft.dropdown.Option("batch_tag_archived", "Batch Tag Archived Files"),
-                ft.dropdown.Option("batch_summarize_archived", "Batch Summarize Archived Files"),
-                ft.dropdown.Option("batch_sentiment_archived", "Batch Analyze Archived Sentiment")
+                ft.dropdown.Option("batch_summarize_archived", "Batch Summarize Archived Files")
             ],
             on_change=self.automation_task_changed
         )
@@ -438,6 +439,12 @@ class AppUI:
             icon=ft.Icons.AUTO_AWESOME,
             on_click=self.analyze_button_clicked
         )
+
+        self.settings_button = ft.IconButton(
+            icon=ft.Icons.SETTINGS,
+            tooltip="AI Model Settings",
+            on_click=self.show_settings_clicked
+        )
         self.cancel_button = ft.ElevatedButton(
             "Cancel",
             icon=ft.Icons.CANCEL,
@@ -512,7 +519,8 @@ class AppUI:
                 # Navigation controls
                 ft.Row([
                     self.files_nav_button,
-                    self.automation_nav_button
+                    self.automation_nav_button,
+                    self.settings_button
                 ], spacing=5),
                 ft.Divider(height=10),
 
@@ -523,6 +531,12 @@ class AppUI:
             padding=10,
             bgcolor=ft.Colors.BLACK12
         )
+
+        # Initialize autosave functionality
+        self.autosave_enabled = True
+        self.autosave_interval = 30  # seconds
+        self.autosave_thread = None
+        self.start_autosave_timer()
 
     def _create_ai_analysis_dropdown(self):
         """Dynamically create AI analysis dropdown based on available plugins."""
@@ -540,8 +554,8 @@ class AppUI:
                     display_text = "Tags"
                 elif plugin_name == "summarization":
                     display_text = "Summary"
-                elif plugin_name == "sentiment":
-                    display_text = "Sentiment"
+                elif plugin_name == "sentiment_compass":
+                    display_text = "Growth Analysis"
                 else:
                     # For any custom plugins, use description or capitalize name
                     display_text = plugin_description if len(plugin_description) < 20 else plugin_name.replace("_", " ").title()
@@ -555,8 +569,7 @@ class AppUI:
             # Fallback if no plugins found
             dropdown_options = [
                 ft.dropdown.Option("tagging", "Tags"),
-                ft.dropdown.Option("summarization", "Summary"),
-                ft.dropdown.Option("sentiment", "Sentiment")
+                ft.dropdown.Option("summarization", "Summary")
             ]
             default_value = "tagging"
 
@@ -642,8 +655,8 @@ class AppUI:
         """AI分析結果を表示するダイアログ"""
         title_map = {
             "summarization": "Summary Results",
-            "sentiment": "Sentiment Analysis Results",
-            "tagging": "Tagging Results"
+            "tagging": "Tagging Results",
+            "sentiment_compass": "Sentiment Compass - Growth Analysis"
         }
         
         content_widgets = []
@@ -665,38 +678,6 @@ class AppUI:
                 ft.Text(f"Compression Ratio: {compression_ratio:.2%}", size=12, color=ft.Colors.GREY_600)
             ])
             
-        elif analysis_type == "sentiment":
-            overall_sentiment = result_data.get("overall_sentiment", "Unknown")
-            emotions = result_data.get("emotions_detected", [])
-            intensity = result_data.get("intensity", "Unknown")
-            
-            # Sentiment color coding
-            sentiment_color = ft.Colors.GREY
-            if "ポジティブ" in overall_sentiment:
-                sentiment_color = ft.Colors.GREEN
-            elif "ネガティブ" in overall_sentiment:
-                sentiment_color = ft.Colors.RED
-                
-            content_widgets.extend([
-                ft.Row([
-                    ft.Text("Overall Sentiment:", weight=ft.FontWeight.BOLD),
-                    ft.Container(
-                        content=ft.Text(overall_sentiment, color=ft.Colors.WHITE),
-                        bgcolor=sentiment_color,
-                        padding=ft.padding.symmetric(horizontal=8, vertical=4),
-                        border_radius=15
-                    )
-                ]),
-                ft.Text(f"Intensity: {intensity}", size=14),
-                ft.Text("Detected Emotions:", weight=ft.FontWeight.BOLD, size=14),
-                ft.Row([
-                    ft.Chip(
-                        label=ft.Text(emotion.title()),
-                        bgcolor=ft.Colors.BLUE_100
-                    ) for emotion in emotions
-                ] if emotions else [ft.Text("No specific emotions detected", color=ft.Colors.GREY)], wrap=True)
-            ])
-            
         elif analysis_type == "tagging":
             tags = result_data.get("tags", [])
             content_widgets.extend([
@@ -708,8 +689,78 @@ class AppUI:
                     ) for tag in tags
                 ] if tags else [ft.Text("No tags generated", color=ft.Colors.GREY)], wrap=True)
             ])
-        
+
+        elif analysis_type == "sentiment_compass":
+            axes_scores = result_data.get("axes_scores", {})
+            axes_reasoning = result_data.get("axes_reasoning", {})
+            total_score = result_data.get("total_score", 0)
+            compass_summary = result_data.get("compass_summary", "")
+
+            # Create compass visualization
+            content_widgets.extend([
+                ft.Text("Growth Analysis Dashboard", weight=ft.FontWeight.BOLD, size=16),
+                ft.Divider(),
+
+                # Summary
+                ft.Container(
+                    content=ft.Text(compass_summary, color=ft.Colors.BLUE_800),
+                    bgcolor=ft.Colors.BLUE_50,
+                    padding=10,
+                    border_radius=5
+                ),
+
+                # Total Score
+                ft.Row([
+                    ft.Text("Total Score:", weight=ft.FontWeight.BOLD),
+                    ft.Text(f"{total_score}/40", size=18, weight=ft.FontWeight.BOLD, color=ft.Colors.GREEN)
+                ]),
+
+                ft.Divider(),
+
+                # Radar Chart Style Visualization
+                ft.Text("Growth Compass Visualization:", weight=ft.FontWeight.BOLD),
+                self._create_compass_chart(axes_scores),
+
+                ft.Divider(),
+                ft.Text("Detailed Analysis:", weight=ft.FontWeight.BOLD),
+            ])
+
+            # Add individual axis results
+            axis_names = {
+                "emotion": "情熱・熱量",
+                "logic": "論理性・客観性",
+                "effort": "努力・勤勉性",
+                "growth": "成長・発展性"
+            }
+
+            for axis_key, axis_name in axis_names.items():
+                score = axes_scores.get(axis_key, 0)
+                reasoning = axes_reasoning.get(axis_key, "")
+
+                # Color coding based on score
+                score_color = ft.Colors.GREEN if score >= 7 else ft.Colors.ORANGE if score >= 4 else ft.Colors.RED
+
+                content_widgets.extend([
+                    ft.Container(
+                        content=ft.Column([
+                            ft.Row([
+                                ft.Text(axis_name, weight=ft.FontWeight.BOLD, size=14),
+                                ft.Text(f"{score}/10", color=score_color, weight=ft.FontWeight.BOLD)
+                            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                            ft.Text(reasoning, size=12, color=ft.Colors.GREY_700)
+                        ]),
+                        bgcolor=ft.Colors.GREY_50,
+                        padding=8,
+                        border_radius=5,
+                        margin=ft.margin.only(bottom=5)
+                    )
+                ])
+
         # Create and show dialog
+        # Adjust dialog size based on analysis type
+        dialog_width = 600 if analysis_type == "sentiment_compass" else 500
+        dialog_height = 400 if analysis_type == "sentiment_compass" else 300
+
         dialog = ft.AlertDialog(
             title=ft.Text(title_map.get(analysis_type, "Analysis Results")),
             content=ft.Container(
@@ -718,8 +769,8 @@ class AppUI:
                     spacing=10,
                     scroll=ft.ScrollMode.AUTO
                 ),
-                width=500,
-                height=300
+                width=dialog_width,
+                height=dialog_height
             ),
             actions=[
                 ft.TextButton("Close", on_click=lambda e: self.close_ai_results_dialog())
@@ -747,9 +798,9 @@ class AppUI:
         elif analysis_type == "summarization":
             self.analyze_button.text = "Generate Summary"
             self.analyze_button.icon = ft.Icons.SUMMARIZE
-        elif analysis_type == "sentiment":
-            self.analyze_button.text = "Analyze Sentiment"
-            self.analyze_button.icon = ft.Icons.SENTIMENT_SATISFIED
+        elif analysis_type == "sentiment_compass":
+            self.analyze_button.text = "Growth Analysis"
+            self.analyze_button.icon = ft.Icons.RADAR
         self.page.update()
     
     def auto_save_active_tab(self):
@@ -760,6 +811,7 @@ class AppUI:
             content = active_tab.content.value
             if self.on_save_file:
                 self.on_save_file(path, content)
+                self.mark_tab_as_saved(active_tab)
                 return True
         return False
 
@@ -772,6 +824,7 @@ class AppUI:
                 content = tab.content.value
                 if self.on_save_file:
                     self.on_save_file(path, content)
+                    self.mark_tab_as_saved(tab)
                     saved_count += 1
         return saved_count
 
@@ -812,6 +865,11 @@ class AppUI:
                 # Use new AI analysis system for other types
                 if self.on_run_ai_analysis:
                     self.on_run_ai_analysis(path, content, analysis_type)
+        else:
+            # Show user-friendly message
+            self.page.snack_bar = ft.SnackBar(content=ft.Text("Please open a file first before running analysis."))
+            self.page.snack_bar.open = True
+            self.page.update()
 
     def save_button_clicked(self, e):
         active_tab = self.get_active_tab()
@@ -819,6 +877,10 @@ class AppUI:
             path = active_tab.content.data
             content = active_tab.content.value
             self.on_save_file(path, content)
+
+    def show_settings_clicked(self, e):
+        """Handle settings button click."""
+        show_settings_dialog(self.page)
 
     def handle_rename_intent(self, file_info):
         """Receives the intent to rename a file and shows a custom modal dialog."""
@@ -1469,15 +1531,20 @@ class AppUI:
                 self.page.update()
                 return
 
-        new_editor = ft.TextField(value=content, multiline=True, expand=True, data=path)
+        new_editor = ft.TextField(value=content, multiline=True, expand=True, data=path, on_change=self.on_content_change)
         
         # Tabの参照を先に作っておく
         new_tab = ft.Tab(content=new_editor)
         
+        # Store original filename and create title text reference
+        new_tab.original_filename = filename
+        new_tab.title_text = ft.Text(filename)
+        new_tab.has_unsaved_changes = False
+
         new_tab.tab_content = ft.Row(
             spacing=5,
             controls=[
-                ft.Text(filename),
+                new_tab.title_text,
                 ft.IconButton(
                     icon=ft.Icons.CLOSE,
                     icon_size=12,
@@ -1509,6 +1576,149 @@ class AppUI:
         if self.tabs.tabs and len(self.tabs.tabs) > self.tabs.selected_index:
              return self.tabs.tabs[self.tabs.selected_index]
         return None
+
+    def on_content_change(self, e):
+        """Handle content change in text editor - mark tab as having unsaved changes."""
+        # Find which tab contains this text field
+        for tab in self.tabs.tabs:
+            if hasattr(tab, 'content') and tab.content == e.control:
+                if not hasattr(tab, 'has_unsaved_changes') or not tab.has_unsaved_changes:
+                    tab.has_unsaved_changes = True
+                    self.update_tab_title(tab)
+                break
+
+    def update_tab_title(self, tab):
+        """Update tab title to show unsaved changes indicator."""
+        if hasattr(tab, 'title_text') and hasattr(tab, 'original_filename'):
+            if hasattr(tab, 'has_unsaved_changes') and tab.has_unsaved_changes:
+                tab.title_text.value = f"*{tab.original_filename}"
+            else:
+                tab.title_text.value = tab.original_filename
+            self.page.update()
+
+    def mark_tab_as_saved(self, tab):
+        """Mark tab as saved (remove unsaved changes indicator)."""
+        if hasattr(tab, 'has_unsaved_changes'):
+            tab.has_unsaved_changes = False
+            self.update_tab_title(tab)
+
+    def start_autosave_timer(self):
+        """Start the autosave timer thread."""
+        if self.autosave_thread is None or not self.autosave_thread.is_alive():
+            self.autosave_thread = threading.Thread(target=self._autosave_worker, daemon=True)
+            self.autosave_thread.start()
+
+    def _autosave_worker(self):
+        """Background worker for periodic autosave."""
+        while self.autosave_enabled:
+            time.sleep(self.autosave_interval)
+            if self.autosave_enabled:
+                try:
+                    # Only auto-save tabs that have unsaved changes
+                    saved_count = 0
+                    for tab in self.tabs.tabs:
+                        if (hasattr(tab, 'has_unsaved_changes') and tab.has_unsaved_changes
+                            and hasattr(tab.content, 'data') and hasattr(tab.content, 'value')):
+                            path = tab.content.data
+                            content = tab.content.value
+                            if self.on_save_file:
+                                self.on_save_file(path, content)
+                                self.mark_tab_as_saved(tab)
+                                saved_count += 1
+
+                    if saved_count > 0:
+                        # Show a brief autosave notification
+                        if hasattr(self, 'page') and self.page:
+                            self.page.snack_bar = ft.SnackBar(
+                                content=ft.Text(f"Auto-saved {saved_count} file(s)"),
+                                duration=2000
+                            )
+                            self.page.snack_bar.open = True
+                            self.page.update()
+                except Exception as e:
+                    # Silent fail for autosave to avoid disrupting user experience
+                    print(f"Autosave error: {e}")
+
+    def stop_autosave(self):
+        """Stop the autosave functionality."""
+        self.autosave_enabled = False
+
+    def _create_compass_chart(self, axes_scores: dict) -> ft.Container:
+        """Create a visual compass chart representation.
+
+        Args:
+            axes_scores (dict): Dictionary of axis scores
+
+        Returns:
+            ft.Container: Visual compass chart
+        """
+        axis_names = {
+            "emotion": "情熱",
+            "logic": "論理性",
+            "effort": "努力",
+            "growth": "成長性"
+        }
+
+        axis_colors = {
+            "emotion": ft.Colors.RED_400,
+            "logic": ft.Colors.BLUE_400,
+            "effort": ft.Colors.GREEN_400,
+            "growth": ft.Colors.PURPLE_400
+        }
+
+        # Create circular progress indicators for each axis
+        compass_elements = []
+
+        for axis_key, axis_name in axis_names.items():
+            score = axes_scores.get(axis_key, 0)
+            progress_value = score / 10.0  # Convert to 0-1 range
+
+            compass_elements.append(
+                ft.Container(
+                    content=ft.Column([
+                        ft.ProgressRing(
+                            value=progress_value,
+                            width=80,
+                            height=80,
+                            stroke_width=8,
+                            color=axis_colors.get(axis_key, ft.Colors.GREY),
+                            bgcolor=ft.Colors.GREY_200
+                        ),
+                        ft.Text(
+                            axis_name,
+                            size=12,
+                            weight=ft.FontWeight.BOLD,
+                            text_align=ft.TextAlign.CENTER
+                        ),
+                        ft.Text(
+                            f"{score}/10",
+                            size=14,
+                            weight=ft.FontWeight.BOLD,
+                            color=axis_colors.get(axis_key, ft.Colors.GREY),
+                            text_align=ft.TextAlign.CENTER
+                        )
+                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                    padding=10
+                )
+            )
+
+        # Arrange in a 2x2 grid layout
+        return ft.Container(
+            content=ft.Column([
+                ft.Row([
+                    compass_elements[0],  # emotion (top-left)
+                    compass_elements[1],  # logic (top-right)
+                ], alignment=ft.MainAxisAlignment.SPACE_AROUND),
+                ft.Row([
+                    compass_elements[2],  # effort (bottom-left)
+                    compass_elements[3],  # growth (bottom-right)
+                ], alignment=ft.MainAxisAlignment.SPACE_AROUND)
+            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+            bgcolor=ft.Colors.GREY_50,
+            padding=20,
+            border_radius=10,
+            border=ft.border.all(2, ft.Colors.GREY_300)
+        )
 
     # ========== AUTOMATION UI METHODS ==========
 

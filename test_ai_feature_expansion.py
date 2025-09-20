@@ -228,10 +228,8 @@ def test_ui_components():
     expected_options = [
         "batch_tag_untagged",
         "batch_summarize",
-        "batch_sentiment",
         "batch_tag_archived",
         "batch_summarize_archived",
-        "batch_sentiment_archived"
     ]
 
     print(f"[INFO] Expected automation options: {len(expected_options)} options")
@@ -258,7 +256,7 @@ def run_all_tests():
     if tests_passed == total_tests:
         print(f"All tests passed! ({tests_passed}/{total_tests})")
         print("\nImplemented Features:")
-        print("- Archived files batch AI analysis (tagging, summarization, sentiment)")
+        print("- Archived files batch AI analysis (tagging, summarization)")
         print("- Enhanced archive explorer with summary display and filtering")
         print("- Summary display option in file popup menus")
         print("- Improved automation UI with archived file processing options")

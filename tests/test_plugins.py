@@ -1,6 +1,6 @@
 """Unit tests for specific AI analysis plugins.
 
-Tests the concrete implementations of tagging, summarization, and sentiment plugins.
+Tests the concrete implementations of tagging and summarization plugins.
 """
 
 import unittest
@@ -14,7 +14,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from ai_analysis.plugins.tagging_plugin import TaggingPlugin
 from ai_analysis.plugins.summarization_plugin import SummarizationPlugin
-from ai_analysis.plugins.sentiment_plugin import SentimentPlugin
 
 
 class TestTaggingPlugin(unittest.TestCase):
@@ -220,133 +219,13 @@ class TestSummarizationPlugin(unittest.TestCase):
         self.assertEqual(mock_generate.call_count, 2)
 
 
-class TestSentimentPlugin(unittest.TestCase):
-    """Test cases for SentimentPlugin."""
-    
-    def setUp(self):
-        """Set up test fixtures."""
-        self.plugin = SentimentPlugin()
-    
-    def test_plugin_properties(self):
-        """Test plugin basic properties."""
-        self.assertEqual(self.plugin.name, "sentiment")
-        self.assertIn("sentiment", self.plugin.description.lower())
-        self.assertEqual(self.plugin.version, "1.0.0")
-    
-    def test_validate_content(self):
-        """Test content validation."""
-        # Valid content (>= 20 chars)
-        self.assertTrue(self.plugin.validate_content("This is a longer piece of content"))
-        
-        # Invalid content (< 20 chars)
-        self.assertFalse(self.plugin.validate_content("Short"))
-        self.assertFalse(self.plugin.validate_content(""))
-    
-    @patch('ai_analysis.plugins.sentiment_plugin.ollama.generate')
-    def test_analyze_basic_sentiment(self, mock_generate):
-        """Test basic sentiment analysis."""
-        mock_generate.return_value = {
-            'response': 'ポジティブ - この文章は明るく前向きな内容です。'
-        }
-        
-        result = self.plugin.analyze("I am very happy today!", analysis_type="basic")
-        
-        self.assertTrue(result.success)
-        self.assertIn("overall_sentiment", result.data)
-        self.assertEqual(result.data["overall_sentiment"], "ポジティブ")
-        self.assertEqual(result.data["analysis_type"], "basic")
-        self.assertIn("raw_response", result.data)
-    
-    @patch('ai_analysis.plugins.sentiment_plugin.ollama.generate')
-    def test_analyze_detailed_sentiment(self, mock_generate):
-        """Test detailed sentiment analysis."""
-        mock_generate.return_value = {
-            'response': '''全体的な感情: ポジティブ
-            感情の強さ: 強い
-            主要な感情: 喜び
-            トーン: 情熱的'''
-        }
-        
-        result = self.plugin.analyze("Great content!", analysis_type="detailed")
-        
-        self.assertTrue(result.success)
-        self.assertEqual(result.data["analysis_type"], "detailed")
-        
-        # Check prompt contains detailed analysis request
-        call_args = mock_generate.call_args[1]
-        self.assertIn("詳細に", call_args['prompt'])
-    
-    @patch('ai_analysis.plugins.sentiment_plugin.ollama.generate')
-    def test_analyze_emotional_sentiment(self, mock_generate):
-        """Test emotional sentiment analysis."""
-        mock_generate.return_value = {
-            'response': '''喜び: 8
-            悲しみ: 2
-            怒り: 1
-            恐れ: 0
-            驚き: 3
-            全体的印象: とても明るい'''
-        }
-        
-        result = self.plugin.analyze("Great content!", analysis_type="emotional")
-        
-        self.assertTrue(result.success)
-        self.assertEqual(result.data["analysis_type"], "emotional")
-        
-        # Check prompt asks for numerical ratings
-        call_args = mock_generate.call_args[1]
-        self.assertIn("0-10", call_args['prompt'])
-    
-    def test_parse_sentiment_response_positive(self):
-        """Test parsing positive sentiment response."""
-        response = "ポジティブ - この文章は明るく前向きです。喜びが感じられます。"
-        
-        parsed = self.plugin._parse_sentiment_response(response, "basic")
-        
-        self.assertEqual(parsed["overall_sentiment"], "ポジティブ")
-        self.assertIn("joy", parsed["emotions_detected"])
-        self.assertIn("raw_analysis", parsed)
-    
-    def test_parse_sentiment_response_negative(self):
-        """Test parsing negative sentiment response."""
-        response = "ネガティブ - この文章は暗く悲しい内容です。怒りも感じられます。"
-        
-        parsed = self.plugin._parse_sentiment_response(response, "basic")
-        
-        self.assertEqual(parsed["overall_sentiment"], "ネガティブ")
-        self.assertIn("sadness", parsed["emotions_detected"])
-        self.assertIn("anger", parsed["emotions_detected"])
-    
-    def test_parse_sentiment_response_neutral(self):
-        """Test parsing neutral sentiment response."""
-        response = "この文章は特に感情的な要素はありません。"
-        
-        parsed = self.plugin._parse_sentiment_response(response, "basic")
-        
-        self.assertEqual(parsed["overall_sentiment"], "ニュートラル")
-        self.assertEqual(len(parsed["emotions_detected"]), 0)
-    
-    def test_parse_sentiment_response_intensity(self):
-        """Test parsing sentiment intensity."""
-        response = "ポジティブ - とても強い喜びが表現されています。"
-        
-        parsed = self.plugin._parse_sentiment_response(response, "basic")
-        
-        self.assertEqual(parsed["intensity"], "強い")
-        
-        # Test weak intensity
-        response = "ネガティブ - 弱い悲しみが感じられます。"
-        parsed = self.plugin._parse_sentiment_response(response, "basic")
-        
-        self.assertEqual(parsed["intensity"], "弱い")
-
 
 class TestPluginIntegration(unittest.TestCase):
     """Integration tests for plugin interactions."""
     
     def test_all_plugins_implement_interface(self):
         """Test that all plugins properly implement the base interface."""
-        plugins = [TaggingPlugin(), SummarizationPlugin(), SentimentPlugin()]
+        plugins = [TaggingPlugin(), SummarizationPlugin()]
         
         for plugin in plugins:
             # Test required methods exist

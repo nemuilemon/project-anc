@@ -8,15 +8,15 @@ different types of content analysis functionality.
 try:
     from .tagging_plugin import TaggingPlugin
     from .summarization_plugin import SummarizationPlugin
-    from .sentiment_plugin import SentimentPlugin
+    from .sentiment_compass_plugin import SentimentCompassPlugin
 except SyntaxError:
     # Fallback to test plugins if main plugins have syntax errors
     from .minimal_test import TestTaggingPlugin as TaggingPlugin
     from .minimal_test import TestSummarizationPlugin as SummarizationPlugin
-    from .minimal_test import TestSentimentPlugin as SentimentPlugin
+    from .minimal_test import TestSentimentCompassPlugin as SentimentCompassPlugin
 
 __all__ = [
     'TaggingPlugin',
-    'SummarizationPlugin', 
-    'SentimentPlugin'
+    'SummarizationPlugin',
+    'SentimentCompassPlugin'
 ]
