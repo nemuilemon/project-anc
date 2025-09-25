@@ -9,6 +9,7 @@ import flet as ft
 import os
 from threading import Thread, Event
 from logic import AppLogic
+from memory_creation_manager import MemoryCreationManager
 
 
 class AppHandlers:
@@ -25,6 +26,10 @@ class AppHandlers:
         self.app_ui = app_ui
         self.cancel_event = cancel_event
         self.is_analyzing = False
+
+        # Initialize memory creation manager
+        self.memory_manager = None
+        self._init_memory_manager()
     
     def handle_open_file(self, path: str):
         """ファイルオープン処理のハンドラ"""
@@ -821,3 +826,98 @@ class AppHandlers:
             print(f"Failed to write to backup log: {backup_error}")
             # 最終手段：標準出力にログを出力
             print(f"CHAT LOG ENTRY:\n{log_entry}")
+
+    # ========== MEMORY CREATION HANDLERS ==========
+
+    def _init_memory_manager(self):
+        """Initialize the memory creation manager."""
+        try:
+            import config
+            self.memory_manager = MemoryCreationManager(config)
+            print("Memory Creation Manager initialized successfully")
+        except Exception as e:
+            print(f"Failed to initialize Memory Creation Manager: {e}")
+            self.memory_manager = None
+
+    def handle_create_memory(self):
+        """記憶を作成するハンドラ"""
+        if not self.memory_manager:
+            self.app_ui.show_memory_error("記憶作成マネージャーが初期化されていません。")
+            return
+
+        if not self.memory_manager.is_available():
+            self.app_ui.show_memory_error("記憶作成サービスが利用できません。API設定を確認してください。")
+            return
+
+        # Get selected date from UI
+        target_date = self.app_ui.get_selected_date()
+
+        # Show progress
+        self.app_ui.show_memory_progress()
+
+        # For simplicity and compatibility, run synchronously but with progress indication
+        try:
+            # Brief delay to let progress indicator show
+            import time
+            time.sleep(0.1)
+            self.page.update()
+
+            success, result = self.memory_manager.create_memory(target_date)
+
+            self.app_ui.hide_memory_progress()
+
+            if success:
+                self.app_ui.update_memory_preview(result)
+            else:
+                self.app_ui.show_memory_error(result)
+
+        except Exception as e:
+            self.app_ui.hide_memory_progress()
+            self.app_ui.show_memory_error(f"予期しないエラーが発生しました: {str(e)}")
+            print(f"Exception in handle_create_memory: {e}")
+
+    def handle_save_memory(self):
+        """記憶を保存するハンドラ"""
+        try:
+            # Get the edited memory content and selected date from UI
+            memory_content = self.app_ui.get_memory_edit_content()
+            target_date = self.app_ui.get_selected_date()
+
+            if not memory_content or not memory_content.strip():
+                self.app_ui.show_memory_error("保存する記憶の内容が空です。")
+                return
+
+            # Construct memory file path
+            import config
+            memories_dir = getattr(config, 'MEMORIES_DIR', '')
+            if not memories_dir:
+                self.app_ui.show_memory_error("記憶保存ディレクトリが設定されていません。")
+                return
+
+            # Ensure memories directory exists
+            os.makedirs(memories_dir, exist_ok=True)
+
+            # Create filename in format memory-YY.MM.DD.md
+            from datetime import datetime
+            date_obj = datetime.strptime(target_date, "%Y-%m-%d")
+            memory_filename = f"memory-{date_obj.strftime('%y.%m.%d')}.md"
+            memory_file_path = os.path.join(memories_dir, memory_filename)
+
+            # Use app_logic to save the file (for security and consistency)
+            self.app_logic.save_file(memory_file_path, memory_content)
+
+            # Show success message
+            self.page.snack_bar = ft.SnackBar(
+                content=ft.Text(f"記憶が保存されました: {memory_filename}"),
+                bgcolor=ft.Colors.GREEN,
+                duration=3000
+            )
+            self.page.snack_bar.open = True
+            self.page.update()
+
+            # Refresh file list to show the new memory file
+            self.handle_refresh_files()
+
+        except Exception as e:
+            self.app_ui.show_memory_error(f"記憶の保存中にエラーが発生しました: {str(e)}")
+            print(f"Error saving memory: {e}")

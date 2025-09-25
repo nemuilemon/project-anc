@@ -52,7 +52,19 @@ MODEL_DESCRIPTIONS = {
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
 
 # Aliceシステムプロンプトファイルのパス
-ALICE_SYSTEM_PROMPT_PATH = os.path.join(NOTES_DIR, "0-怪文書.md")
+ALICE_SYSTEM_PROMPT_PATH = os.path.join(NOTES_DIR, "0-System-Prompt.md")
+
+# Alice 長期記憶ファイルのパス
+ALICE_MEMORY_FILE_PATH = os.path.join(NOTES_DIR, "0-Memory.md")
+
+# 記憶ファイルを保存するディレクトリ
+MEMORIES_DIR = os.path.join(PROJECT_ROOT, "data", "memories")
+
+# プロンプトファイルを保存するディレクトリ
+PROMPTS_DIR = os.path.join(PROJECT_ROOT, "prompts")
+
+# 記憶生成用プロンプトファイルのパス
+CREATE_MEMORY_PROMPT_PATH = os.path.join(PROMPTS_DIR, "create_memory_prompt.md")
 
 # Alice Chat ログディレクトリ
 CHAT_LOGS_DIR = os.path.join(PROJECT_ROOT, "data", "chat_logs")

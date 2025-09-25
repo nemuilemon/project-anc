@@ -125,6 +125,9 @@ def main(page: ft.Page):
 
         # Add reference to app_logic in UI for archive functionality
         app_ui._app_logic_ref = app_logic
+
+        # Add handlers reference to UI for memory functionality
+        app_ui.handlers = handlers
         
         page.appbar = app_ui.appbar
         page.add(app_ui.build())

@@ -30,14 +30,16 @@ class AliceChatManager:
         self.config = config
         self.client = None
         self.system_instruction = ""
+        self.long_term_memory = ""
         self.history = []
         self.max_history_length = getattr(config, 'ALICE_CHAT_CONFIG', {}).get('max_history_length', 50)
 
         # Initialize API client
         self._init_client()
 
-        # Load system instruction from file
+        # Load system instruction and memory from files
         self._load_system_instruction()
+        self._load_long_term_memory()
 
     def _init_client(self):
         """Initialize the Gemini API client."""
@@ -72,6 +74,20 @@ class AliceChatManager:
             print(f"Failed to load system instruction: {e}")
             # Fallback system instruction
             self.system_instruction = "You are Alice, a helpful AI assistant."
+
+    def _load_long_term_memory(self):
+        """Load long-term memory from the specified file."""
+        try:
+            memory_file_path = getattr(self.config, 'ALICE_MEMORY_FILE_PATH', '')
+            if memory_file_path and os.path.exists(memory_file_path):
+                with open(memory_file_path, 'r', encoding='utf-8') as f:
+                    self.long_term_memory = f.read().strip()
+                print(f"Long-term memory loaded from: {memory_file_path}")
+            else:
+                print("Long-term memory file not found or not configured. Skipping.")
+        except Exception as e:
+            print(f"Failed to load long-term memory: {e}")
+            self.long_term_memory = ""
 
     def send_message(self, user_message: str) -> str:
         """Send a message to Alice and get the response.
@@ -149,12 +165,16 @@ class AliceChatManager:
         """
         contents = []
 
-        # 1. 今日のチャットログファイルの内容を読み込み
+        # 1. 長期記憶（0-Memory.md）の内容を追加
+        if self.long_term_memory:
+            contents.append(f"=== 長期記憶 ===\n{self.long_term_memory}")
+
+        # 2. 今日のチャットログファイルの内容を読み込み
         today_log_content = self._load_today_chat_log()
         if today_log_content:
             contents.append(f"=== 今日のチャット履歴 ===\n{today_log_content}")
 
-        # 2. 現在のチャットボックスの会話履歴を追加
+        # 3. 現在のチャットボックスの会話履歴を追加
         if self.history:
             chatbox_content = "=== 現在のセッション ===\n"
             for entry in self.history:
@@ -163,7 +183,7 @@ class AliceChatManager:
 
             contents.append(chatbox_content)
 
-        # 3. 最新のユーザーメッセージを明示的に追加（APIが確実に認識するため）
+        # 4. 最新のユーザーメッセージを明示的に追加（APIが確実に認識するため）
         if self.history and self.history[-1]['role'] == 'user':
             contents.append(f"最新メッセージ: {self.history[-1]['content']}")
 

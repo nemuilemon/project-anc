@@ -2,6 +2,7 @@ import flet as ft
 import os
 import threading
 import time
+import datetime
 from security import sanitize_filename, validate_search_input, SecurityError
 from settings_dialog import show_settings_dialog
 from alice_chat_manager import AliceChatManager
@@ -391,6 +392,127 @@ class AppUI:
             expand=True
         )
 
+        # ========== MEMORY CREATION UI CONTROLS ==========
+        self.memory_date_picker = ft.DatePicker(
+            first_date=datetime.datetime(2020, 1, 1),
+            last_date=datetime.datetime.now() + datetime.timedelta(days=30)
+        )
+
+        self.selected_date_text = ft.Text(
+            datetime.datetime.now().strftime("%Y年%m月%d日"),
+            size=16,
+            weight=ft.FontWeight.BOLD
+        )
+
+        self.select_date_button = ft.ElevatedButton(
+            text="日付を選択",
+            icon=ft.Icons.CALENDAR_MONTH,
+            on_click=self.open_memory_date_picker
+        )
+
+        self.create_memory_button = ft.ElevatedButton(
+            text="この日の記憶を紡ぐ",
+            icon=ft.Icons.AUTO_STORIES,
+            on_click=self.create_memory,
+            style=ft.ButtonStyle(
+                bgcolor=ft.Colors.PURPLE,
+                color=ft.Colors.WHITE
+            ),
+            width=200
+        )
+
+        self.memory_progress_ring = ft.ProgressRing(
+            visible=False,
+            width=20,
+            height=20
+        )
+
+        self.memory_preview_field = ft.TextField(
+            label="生成された記憶のプレビュー",
+            multiline=True,
+            read_only=True,
+            min_lines=10,
+            max_lines=20,
+            expand=True
+        )
+
+        self.memory_edit_field = ft.TextField(
+            label="記憶の編集",
+            hint_text="生成された記憶をここで編集できます...",
+            multiline=True,
+            min_lines=10,
+            max_lines=20,
+            expand=True
+        )
+
+        self.save_memory_button = ft.ElevatedButton(
+            text="記憶を保存",
+            icon=ft.Icons.SAVE,
+            on_click=self.save_memory,
+            style=ft.ButtonStyle(
+                bgcolor=ft.Colors.GREEN,
+                color=ft.Colors.WHITE
+            ),
+            disabled=True
+        )
+
+        # Memory container
+        self.memory_container = ft.Container(
+            content=ft.Column([
+                ft.Container(
+                    content=ft.Text("📚 記憶を紡ぐ", size=24, weight=ft.FontWeight.BOLD, color=ft.Colors.PURPLE_400),
+                    padding=ft.padding.all(20),
+                    alignment=ft.alignment.center
+                ),
+                ft.Divider(height=10),
+
+                # Date selection section
+                ft.Container(
+                    content=ft.Column([
+                        ft.Text("記憶を作成する日付を選択してください", size=16, weight=ft.FontWeight.W_500),
+                        ft.Row([
+                            self.select_date_button,
+                            ft.Text("選択された日付:", size=14),
+                            self.selected_date_text
+                        ], spacing=10, alignment=ft.MainAxisAlignment.CENTER),
+                        ft.Row([
+                            self.create_memory_button,
+                            self.memory_progress_ring
+                        ], spacing=10, alignment=ft.MainAxisAlignment.CENTER)
+                    ], spacing=15),
+                    padding=ft.padding.all(20),
+                    bgcolor=ft.Colors.PURPLE_50,
+                    border_radius=10
+                ),
+
+                ft.Divider(height=20),
+
+                # Memory content section
+                ft.Container(
+                    content=ft.Column([
+                        ft.Row([
+                            ft.Container(
+                                content=self.memory_preview_field,
+                                expand=True
+                            ),
+                            ft.Container(
+                                content=self.memory_edit_field,
+                                expand=True
+                            )
+                        ], spacing=10, expand=True),
+                        ft.Container(
+                            content=self.save_memory_button,
+                            alignment=ft.alignment.center,
+                            padding=ft.padding.symmetric(vertical=10)
+                        )
+                    ], spacing=10, expand=True),
+                    expand=True
+                )
+            ], spacing=10),
+            padding=20,
+            expand=True
+        )
+
         # ========== NAVIGATION CONTROLS ==========
         self.files_nav_button = ft.ElevatedButton(
             text="Files",
@@ -410,6 +532,13 @@ class AppUI:
             text="ありすと対話",
             icon=ft.Icons.CHAT,
             on_click=self.switch_to_chat_view,
+            style=ft.ButtonStyle(bgcolor=ft.Colors.GREY)  # Inactive initially
+        )
+
+        self.memory_nav_button = ft.ElevatedButton(
+            text="記憶を紡ぐ",
+            icon=ft.Icons.AUTO_STORIES,
+            on_click=self.switch_to_memory_view,
             style=ft.ButtonStyle(bgcolor=ft.Colors.GREY)  # Inactive initially
         )
 
@@ -605,6 +734,7 @@ class AppUI:
                     self.files_nav_button,
                     self.automation_nav_button,
                     self.chat_nav_button,
+                    self.memory_nav_button,
                     self.settings_button
                 ], spacing=5),
                 ft.Divider(height=10),
@@ -1816,6 +1946,7 @@ class AppUI:
         self.files_nav_button.style = ft.ButtonStyle(bgcolor=ft.Colors.BLUE)
         self.automation_nav_button.style = ft.ButtonStyle(bgcolor=ft.Colors.GREY)
         self.chat_nav_button.style = ft.ButtonStyle(bgcolor=ft.Colors.GREY)
+        self.memory_nav_button.style = ft.ButtonStyle(bgcolor=ft.Colors.GREY)
 
         self.page.update()
 
@@ -1828,6 +1959,7 @@ class AppUI:
         self.files_nav_button.style = ft.ButtonStyle(bgcolor=ft.Colors.GREY)
         self.automation_nav_button.style = ft.ButtonStyle(bgcolor=ft.Colors.BLUE)
         self.chat_nav_button.style = ft.ButtonStyle(bgcolor=ft.Colors.GREY)
+        self.memory_nav_button.style = ft.ButtonStyle(bgcolor=ft.Colors.GREY)
 
         self.page.update()
 
@@ -1840,11 +1972,96 @@ class AppUI:
         self.files_nav_button.style = ft.ButtonStyle(bgcolor=ft.Colors.GREY)
         self.automation_nav_button.style = ft.ButtonStyle(bgcolor=ft.Colors.GREY)
         self.chat_nav_button.style = ft.ButtonStyle(bgcolor=ft.Colors.BLUE)
+        self.memory_nav_button.style = ft.ButtonStyle(bgcolor=ft.Colors.GREY)
 
         # Load existing chat history when switching to chat view
         self._refresh_chat_history()
 
         self.page.update()
+
+    def switch_to_memory_view(self, e=None):
+        """記憶作成ビューに切り替え"""
+        self.current_view = "memory"
+        self.sidebar_content_container.content = self.memory_container
+
+        # Update button styles
+        self.files_nav_button.style = ft.ButtonStyle(bgcolor=ft.Colors.GREY)
+        self.automation_nav_button.style = ft.ButtonStyle(bgcolor=ft.Colors.GREY)
+        self.chat_nav_button.style = ft.ButtonStyle(bgcolor=ft.Colors.GREY)
+        self.memory_nav_button.style = ft.ButtonStyle(bgcolor=ft.Colors.BLUE)
+
+        self.page.update()
+
+    # ========== MEMORY CREATION UI METHODS ==========
+
+    def open_memory_date_picker(self, e=None):
+        """記憶作成用の日付ピッカーを開く"""
+        self.page.open(self.memory_date_picker)
+        self.memory_date_picker.on_change = self.memory_date_selected
+
+    def memory_date_selected(self, e):
+        """記憶作成用の日付が選択された時の処理"""
+        if e.control.value:
+            selected_date = e.control.value
+            formatted_date = selected_date.strftime("%Y年%m月%d日")
+            self.selected_date_text.value = formatted_date
+            self.selected_date_text.data = selected_date.strftime("%Y-%m-%d")  # Store ISO format
+            self.page.update()
+
+    def create_memory(self, e=None):
+        """記憶を生成する"""
+        # This method will be implemented in handlers.py
+        if hasattr(self, 'handlers'):
+            self.handlers.handle_create_memory()
+
+    def save_memory(self, e=None):
+        """記憶を保存する"""
+        # This method will be implemented in handlers.py
+        if hasattr(self, 'handlers'):
+            self.handlers.handle_save_memory()
+
+    def update_memory_preview(self, memory_text: str):
+        """記憶のプレビューを更新する"""
+        self.memory_preview_field.value = memory_text
+        self.memory_edit_field.value = memory_text  # Copy to edit field
+        self.save_memory_button.disabled = False
+        self.page.update()
+
+    def show_memory_progress(self):
+        """記憶生成の進捗表示を開始"""
+        self.memory_progress_ring.visible = True
+        self.create_memory_button.disabled = True
+        self.page.update()
+
+    def hide_memory_progress(self):
+        """記憶生成の進捗表示を終了"""
+        self.memory_progress_ring.visible = False
+        self.create_memory_button.disabled = False
+        self.page.update()
+
+    def show_memory_error(self, error_message: str):
+        """記憶生成エラーを表示"""
+        self.hide_memory_progress()
+        # Use the correct Flet API for snack bars
+        self.page.snack_bar = ft.SnackBar(
+            content=ft.Text(f"エラー: {error_message}"),
+            bgcolor=ft.Colors.RED,
+            duration=5000
+        )
+        self.page.snack_bar.open = True
+        self.page.update()
+
+    def get_selected_date(self) -> str:
+        """選択された日付を取得"""
+        if hasattr(self.selected_date_text, 'data') and self.selected_date_text.data:
+            return self.selected_date_text.data
+        else:
+            # Default to today
+            return datetime.datetime.now().strftime("%Y-%m-%d")
+
+    def get_memory_edit_content(self) -> str:
+        """編集されたメモリ内容を取得"""
+        return self.memory_edit_field.value or ""
 
     # ========== CHAT UI METHODS ==========
 
@@ -2150,6 +2367,11 @@ class AppUI:
                 horizontal_alignment=ft.CrossAxisAlignment.CENTER,
             ))
         )
+
+        # Add date picker to page overlay for memory functionality
+        if hasattr(self, 'memory_date_picker'):
+            self.page.overlay.append(self.memory_date_picker)
+
         return ft.Row(
             controls=[self.sidebar, ft.VerticalDivider(width=1), self.tabs],
             expand=True,

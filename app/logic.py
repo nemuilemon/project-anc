@@ -17,7 +17,7 @@ class AppLogic:
     def __init__(self, db):
         self.db = db
         # Define allowed directories for security validation
-        self.allowed_dirs = [config.NOTES_DIR, config.ARCHIVE_DIR]
+        self.allowed_dirs = [config.NOTES_DIR, config.ARCHIVE_DIR, config.MEMORIES_DIR]
         
         # Initialize AI analysis system
         self.ai_manager = AIAnalysisManager()
@@ -69,6 +69,9 @@ class AppLogic:
         # チャットログファイルを追加（無効化）
         # files = self._add_chat_logs_to_file_list(files, show_archived)
 
+        # 記憶ファイルを追加
+        files = self._add_memory_files_to_file_list(files, show_archived)
+
         # ファイル名でアルファベット順にソート
         files.sort(key=lambda x: x.get('title', '').lower())
         return files
@@ -119,6 +122,56 @@ class AppLogic:
 
         except Exception as e:
             print(f"Error adding chat logs to file list: {e}")
+            return files
+
+    def _add_memory_files_to_file_list(self, files, show_archived=False):
+        """記憶ファイルをファイルリストに追加する。
+
+        Args:
+            files (list): 既存のファイルリスト
+            show_archived (bool): アーカイブされたファイルも含めるか
+
+        Returns:
+            list: 記憶ファイルが追加されたファイルリスト
+        """
+        try:
+            memories_dir = getattr(config, 'MEMORIES_DIR', '')
+            if not memories_dir:
+                return files
+
+            # 記憶ディレクトリが存在しない場合は作成
+            if not os.path.exists(memories_dir):
+                os.makedirs(memories_dir, exist_ok=True)
+                return files
+
+            # 既存のファイルパスのセットを作成（重複を避けるため）
+            existing_paths = {f.get('path', '') for f in files}
+
+            # 記憶ファイルをスキャン
+            for filename in os.listdir(memories_dir):
+                if filename.endswith('.md'):
+                    memory_file_path = os.path.join(memories_dir, filename)
+
+                    # 既にリストに存在する場合はスキップ
+                    if memory_file_path in existing_paths:
+                        continue
+
+                    # ファイル情報を作成
+                    memory_info = {
+                        'title': f"[MEMORY] {filename}",  # 記憶ファイルであることを示すプレフィックス
+                        'path': memory_file_path,
+                        'tags': ['memory', 'alice', 'daily-record'],  # 特別なタグを設定
+                        'status': 'active',
+                        'order_index': 0,
+                        'is_memory_file': True  # 記憶ファイルであることを示すフラグ
+                    }
+
+                    files.append(memory_info)
+
+            return files
+
+        except Exception as e:
+            print(f"Error adding memory files to file list: {e}")
             return files
 
     # 2. データベース同期機能：フォルダとDBを同期する新機能
