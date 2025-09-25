@@ -114,7 +114,10 @@ def main(page: ft.Page):
             on_cancel_automation=handlers.handle_cancel_automation,
             on_get_automation_preview=handlers.handle_get_automation_preview,
             # Available AI functions for dynamic dropdown
-            available_ai_functions=available_ai_functions
+            available_ai_functions=available_ai_functions,
+            # Chat functionality
+            on_send_chat_message=handlers.handle_send_chat_message,
+            config=config
         )
         
         # Now update the handlers with the initialized app_ui

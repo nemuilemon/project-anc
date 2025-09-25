@@ -4,6 +4,7 @@ import threading
 import time
 from security import sanitize_filename, validate_search_input, SecurityError
 from settings_dialog import show_settings_dialog
+from alice_chat_manager import AliceChatManager
 
 # --- New Approach: Inherit from a specific layout control (Flet >= 0.21.0) ---
 class FileListItem(ft.ListTile):
@@ -283,7 +284,7 @@ class AppUI:
     Callbacks:
         各操作に対応するコールバック関数群（on_open_file, on_save_file等）
     """
-    def __init__(self, page: ft.Page, on_open_file, on_save_file, on_analyze_tags, on_refresh_files, on_update_tags, on_cancel_tags, on_rename_file, on_close_tab, on_create_file, on_archive_file, on_delete_file, on_run_ai_analysis=None, on_run_automation=None, on_cancel_automation=None, on_get_automation_preview=None, available_ai_functions=None):
+    def __init__(self, page: ft.Page, on_open_file, on_save_file, on_analyze_tags, on_refresh_files, on_update_tags, on_cancel_tags, on_rename_file, on_close_tab, on_create_file, on_archive_file, on_delete_file, on_run_ai_analysis=None, on_run_automation=None, on_cancel_automation=None, on_get_automation_preview=None, available_ai_functions=None, on_send_chat_message=None, config=None):
         self.page = page
         self.on_open_file = on_open_file
         self.on_save_file = on_save_file
@@ -303,6 +304,18 @@ class AppUI:
         self.on_cancel_automation = on_cancel_automation
         self.on_get_automation_preview = on_get_automation_preview
 
+        # Chat callbacks and configuration
+        self.on_send_chat_message = on_send_chat_message
+        self.config = config
+
+        # Initialize Alice Chat Manager
+        self.alice_chat_manager = None
+        if self.config and on_send_chat_message:
+            try:
+                self.alice_chat_manager = AliceChatManager(self.config)
+            except Exception as e:
+                print(f"Failed to initialize Alice Chat Manager: {e}")
+
         # Store available AI functions for dynamic dropdown
         self.available_ai_functions = available_ai_functions or []
 
@@ -311,8 +324,72 @@ class AppUI:
         self.file_list_column = ft.Column(scroll=ft.ScrollMode.AUTO, expand=True)
         self.file_list = self.file_list_column
 
-        # Current view state - "files" or "automation"
+        # Current view state - "files", "automation", or "chat"
         self.current_view = "files"
+
+        # ========== CHAT UI CONTROLS ==========
+        self.chat_history_list = ft.ListView(
+            expand=True,
+            auto_scroll=True,
+            spacing=10,
+            padding=ft.padding.all(10)
+        )
+
+        self.message_input_field = ft.TextField(
+            hint_text="ありすに話しかけてください...",
+            expand=True,
+            multiline=True,
+            min_lines=1,
+            max_lines=5,
+            shift_enter=True,
+            on_submit=self.send_chat_message
+        )
+
+        self.send_message_button = ft.IconButton(
+            icon=ft.Icons.SEND,
+            tooltip="メッセージを送信",
+            on_click=self.send_chat_message,
+            style=ft.ButtonStyle(
+                bgcolor=ft.Colors.BLUE,
+                color=ft.Colors.WHITE
+            )
+        )
+
+        self.clear_chat_button = ft.IconButton(
+            icon=ft.Icons.CLEAR_ALL,
+            tooltip="会話履歴をクリア",
+            on_click=self.clear_chat_history
+        )
+
+        # Chat input row
+        self.chat_input_row = ft.Row([
+            self.message_input_field,
+            self.send_message_button,
+            self.clear_chat_button
+        ], spacing=10)
+
+        # Chat container
+        self.chat_container = ft.Container(
+            content=ft.Column([
+                ft.Container(
+                    content=ft.Text("🌸 ありすと対話", size=24, weight=ft.FontWeight.BOLD, color=ft.Colors.PINK_400),
+                    padding=ft.padding.all(20),
+                    alignment=ft.alignment.center
+                ),
+                ft.Divider(height=10),
+                ft.Container(
+                    content=self.chat_history_list,
+                    expand=True,
+                    bgcolor=ft.Colors.GREY_50,
+                    border_radius=10,
+                    padding=ft.padding.all(5)
+                ),
+                ft.Divider(height=5),
+                self.chat_input_row
+            ], spacing=10),
+            padding=20,
+            expand=True
+        )
 
         # ========== NAVIGATION CONTROLS ==========
         self.files_nav_button = ft.ElevatedButton(
@@ -326,6 +403,13 @@ class AppUI:
             text="Automation",
             icon=ft.Icons.SMART_TOY,
             on_click=self.switch_to_automation_view,
+            style=ft.ButtonStyle(bgcolor=ft.Colors.GREY)  # Inactive initially
+        )
+
+        self.chat_nav_button = ft.ElevatedButton(
+            text="ありすと対話",
+            icon=ft.Icons.CHAT,
+            on_click=self.switch_to_chat_view,
             style=ft.ButtonStyle(bgcolor=ft.Colors.GREY)  # Inactive initially
         )
 
@@ -520,6 +604,7 @@ class AppUI:
                 ft.Row([
                     self.files_nav_button,
                     self.automation_nav_button,
+                    self.chat_nav_button,
                     self.settings_button
                 ], spacing=5),
                 ft.Divider(height=10),
@@ -527,7 +612,7 @@ class AppUI:
                 # Dynamic content container
                 self.sidebar_content_container
             ]),
-            width=320,  # Increased width for automation UI
+            width=500,  # Increased width for better usability
             padding=10,
             bgcolor=ft.Colors.BLACK12
         )
@@ -1730,6 +1815,7 @@ class AppUI:
         # Update button styles
         self.files_nav_button.style = ft.ButtonStyle(bgcolor=ft.Colors.BLUE)
         self.automation_nav_button.style = ft.ButtonStyle(bgcolor=ft.Colors.GREY)
+        self.chat_nav_button.style = ft.ButtonStyle(bgcolor=ft.Colors.GREY)
 
         self.page.update()
 
@@ -1741,7 +1827,191 @@ class AppUI:
         # Update button styles
         self.files_nav_button.style = ft.ButtonStyle(bgcolor=ft.Colors.GREY)
         self.automation_nav_button.style = ft.ButtonStyle(bgcolor=ft.Colors.BLUE)
+        self.chat_nav_button.style = ft.ButtonStyle(bgcolor=ft.Colors.GREY)
 
+        self.page.update()
+
+    def switch_to_chat_view(self, e=None):
+        """チャットビューに切り替え"""
+        self.current_view = "chat"
+        self.sidebar_content_container.content = self.chat_container
+
+        # Update button styles
+        self.files_nav_button.style = ft.ButtonStyle(bgcolor=ft.Colors.GREY)
+        self.automation_nav_button.style = ft.ButtonStyle(bgcolor=ft.Colors.GREY)
+        self.chat_nav_button.style = ft.ButtonStyle(bgcolor=ft.Colors.BLUE)
+
+        # Load existing chat history when switching to chat view
+        self._refresh_chat_history()
+
+        self.page.update()
+
+    # ========== CHAT UI METHODS ==========
+
+    def send_chat_message(self, e=None):
+        """チャットメッセージを送信する"""
+        if not self.alice_chat_manager or not self.alice_chat_manager.is_available():
+            self.page.snack_bar = ft.SnackBar(
+                content=ft.Text("ありすとの接続が利用できません。Gemini APIキーを設定してください。")
+            )
+            self.page.snack_bar.open = True
+            self.page.update()
+            return
+
+        user_message = self.message_input_field.value.strip()
+        if not user_message:
+            return
+
+        # Clear input field
+        self.message_input_field.value = ""
+        self.page.update()
+
+        # Add user message to chat history
+        self._add_message_to_chat(user_message, is_user=True)
+
+        # Show typing indicator
+        typing_indicator = ft.Container(
+            content=ft.Row([
+                ft.ProgressRing(width=16, height=16, stroke_width=2),
+                ft.Text("ありすが入力中...", size=12, color=ft.Colors.GREY_600)
+            ], spacing=5),
+            alignment=ft.alignment.center_left,
+            padding=ft.padding.only(left=20, top=5, bottom=5)
+        )
+        self.chat_history_list.controls.append(typing_indicator)
+        self.page.update()
+
+        # Send message asynchronously
+        def send_message_async():
+            try:
+                response = self.alice_chat_manager.send_message(user_message)
+
+                # Remove typing indicator
+                if typing_indicator in self.chat_history_list.controls:
+                    self.chat_history_list.controls.remove(typing_indicator)
+
+                # Add Alice's response to chat history
+                self._add_message_to_chat(response, is_user=False)
+
+                # Call callback if available
+                if self.on_send_chat_message:
+                    self.on_send_chat_message(user_message, response)
+
+            except Exception as error:
+                # Remove typing indicator
+                if typing_indicator in self.chat_history_list.controls:
+                    self.chat_history_list.controls.remove(typing_indicator)
+
+                # Show error message
+                self._add_message_to_chat(f"エラー: {str(error)}", is_user=False, is_error=True)
+
+        # Run in background thread
+        import threading
+        thread = threading.Thread(target=send_message_async)
+        thread.daemon = True
+        thread.start()
+
+    def clear_chat_history(self, e=None):
+        """チャット履歴をクリアする"""
+        if self.alice_chat_manager:
+            self.alice_chat_manager.clear_history()
+
+        self.chat_history_list.controls.clear()
+
+        # Add welcome message
+        welcome_message = ft.Container(
+            content=ft.Text(
+                "🌸 こんにちは、ご主人様！ありすです。何でもお話しください。",
+                size=14,
+                color=ft.Colors.PINK_600,
+                text_align=ft.TextAlign.CENTER
+            ),
+            alignment=ft.alignment.center,
+            padding=ft.padding.all(20),
+            bgcolor=ft.Colors.PINK_50,
+            border_radius=10
+        )
+        self.chat_history_list.controls.append(welcome_message)
+
+        self.page.update()
+
+    def _refresh_chat_history(self):
+        """チャット履歴を再読み込みする"""
+        self.chat_history_list.controls.clear()
+
+        if self.alice_chat_manager and self.alice_chat_manager.get_history():
+            # Load existing chat history
+            for entry in self.alice_chat_manager.get_history():
+                self._add_message_to_chat(
+                    entry['content'],
+                    is_user=(entry['role'] == 'user')
+                )
+        else:
+            # Add welcome message if no history
+            welcome_message = ft.Container(
+                content=ft.Text(
+                    "🌸 こんにちは、ご主人様！ありすです。何でもお話しください。",
+                    size=14,
+                    color=ft.Colors.PINK_600,
+                    text_align=ft.TextAlign.CENTER
+                ),
+                alignment=ft.alignment.center,
+                padding=ft.padding.all(20),
+                bgcolor=ft.Colors.PINK_50,
+                border_radius=10
+            )
+            self.chat_history_list.controls.append(welcome_message)
+
+        self.page.update()
+
+    def _add_message_to_chat(self, message: str, is_user: bool, is_error: bool = False):
+        """チャット履歴にメッセージを追加する"""
+        if is_user:
+            # User message (right-aligned)
+            message_container = ft.Container(
+                content=ft.Text(message, color=ft.Colors.WHITE, size=14, selectable=True),
+                bgcolor=ft.Colors.BLUE_400,
+                padding=ft.padding.all(10),
+                border_radius=ft.border_radius.only(
+                    top_left=15, top_right=15, bottom_left=15, bottom_right=3
+                ),
+                alignment=ft.alignment.center_right,
+                margin=ft.margin.only(left=50, right=10, bottom=5, top=5)
+            )
+        else:
+            # Alice message (left-aligned)
+            bgcolor = ft.Colors.RED_100 if is_error else ft.Colors.GREY_100
+            text_color = ft.Colors.RED_800 if is_error else ft.Colors.BLACK87
+
+            message_container = ft.Container(
+                content=ft.Text(message, color=text_color, size=14, selectable=True),
+                bgcolor=bgcolor,
+                padding=ft.padding.all(10),
+                border_radius=ft.border_radius.only(
+                    top_left=15, top_right=15, bottom_left=3, bottom_right=15
+                ),
+                alignment=ft.alignment.center_left,
+                margin=ft.margin.only(left=10, right=50, bottom=5, top=5)
+            )
+
+        # Add sender label
+        sender_label = ft.Text(
+            "ご主人様" if is_user else "ありす",
+            size=10,
+            color=ft.Colors.GREY_600,
+            text_align=ft.TextAlign.RIGHT if is_user else ft.TextAlign.LEFT
+        )
+
+        sender_container = ft.Container(
+            content=sender_label,
+            margin=ft.margin.only(
+                left=50 if is_user else 10,
+                right=10 if is_user else 50,
+                bottom=2
+            )
+        )
+
+        self.chat_history_list.controls.extend([sender_container, message_container])
         self.page.update()
 
     def automation_task_changed(self, e):

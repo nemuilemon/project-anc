@@ -31,7 +31,8 @@ class AppLogger:
             'ui_events': self.log_dir / 'ui_events.log',
             'errors': self.log_dir / 'errors.log',
             'security': self.log_dir / 'security.log',
-            'performance': self.log_dir / 'performance.log'
+            'performance': self.log_dir / 'performance.log',
+            'chat': self.log_dir / 'alice_chat.log'
         }
         
         self._setup_loggers()
@@ -91,7 +92,15 @@ class AppLogger:
         perf_handler = logging.FileHandler(self.log_files['performance'], encoding='utf-8')
         perf_handler.setFormatter(formatter)
         self.perf_logger.addHandler(perf_handler)
-        
+
+        # Chat logger
+        self.chat_logger = logging.getLogger(f"{self.app_name}.chat")
+        self.chat_logger.setLevel(logging.INFO)
+
+        chat_handler = logging.FileHandler(self.log_files['chat'], encoding='utf-8')
+        chat_handler.setFormatter(formatter)
+        self.chat_logger.addHandler(chat_handler)
+
         # Console logging for development
         if os.getenv('ANC_DEBUG', '').lower() in ('1', 'true', 'yes'):
             console_handler = logging.StreamHandler(sys.stdout)
@@ -269,6 +278,10 @@ def log_security(event_type: str, details: str, severity: str = "WARNING"):
 def log_performance(operation: str, duration: float, details: str = ""):
     """Log performance metrics."""
     app_logger.log_performance(operation, duration, details)
+
+def log_chat(message: str):
+    """Log a chat-related message."""
+    app_logger.chat_logger.info(message)
 
 
 # Context manager for performance logging

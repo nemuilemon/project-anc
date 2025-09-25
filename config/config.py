@@ -45,3 +45,21 @@ MODEL_DESCRIPTIONS = {
     "llama3.2": "Llama系 - 汎用的な性能",
     "auto": "自動選択 - 利用可能な最初のモデルを使用"
 }
+
+# =================== Alice Chat 設定 ===================
+
+# Gemini API Key - 環境変数から読み込み（セキュリティのため）
+GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
+
+# Aliceシステムプロンプトファイルのパス
+ALICE_SYSTEM_PROMPT_PATH = os.path.join(NOTES_DIR, "0-怪文書.md")
+
+# Alice Chat ログディレクトリ
+CHAT_LOGS_DIR = os.path.join(PROJECT_ROOT, "data", "chat_logs")
+
+# Alice Chat 設定
+ALICE_CHAT_CONFIG = {
+    "model": "gemini-2.5-pro",  # デフォルトのGeminiモデル
+    "max_history_length": 500,  # 保持する会話履歴の最大件数
+    "auto_save_interval": 30,  # 自動保存間隔（秒）
+}

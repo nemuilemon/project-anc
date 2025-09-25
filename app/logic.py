@@ -39,11 +39,11 @@ class AppLogic:
 
     def get_file_list(self, show_archived=False):
         """ファイルリストを取得する。
-        
+
         Args:
             show_archived (bool): Trueの場合、アーカイブされたファイルも含める。
                                  デフォルトはFalse（アクティブなファイルのみ）。
-        
+
         Returns:
             list: ファイル情報の辞書のリスト。各辞書は以下のキーを含む：
                 - title (str): ファイル名
@@ -51,10 +51,11 @@ class AppLogic:
                 - tags (list): タグのリスト
                 - status (str): ファイル状態 ('active' または 'archived')
                 - order_index (int): 表示順序（昇順でソート）
-        
+
         Note:
             レガシーファイルでstatusやorder_indexが未設定の場合、
             それぞれ'active'と0として扱われる。
+            チャットログファイルも自動的に含まれる。
         """
         if show_archived:
             # すべてのファイルを返す
@@ -64,10 +65,61 @@ class AppLogic:
             File = Query()
             # statusフィールドがないレガシーファイルはアクティブとして扱う
             files = self.db.search((File.status == 'active') | (~File.status.exists()))
-        
+
+        # チャットログファイルを追加（無効化）
+        # files = self._add_chat_logs_to_file_list(files, show_archived)
+
         # ファイル名でアルファベット順にソート
         files.sort(key=lambda x: x.get('title', '').lower())
         return files
+
+    def _add_chat_logs_to_file_list(self, files, show_archived=False):
+        """チャットログファイルをファイルリストに追加する。
+
+        Args:
+            files (list): 既存のファイルリスト
+            show_archived (bool): アーカイブされたファイルも含めるか
+
+        Returns:
+            list: チャットログが追加されたファイルリスト
+        """
+        try:
+            chat_logs_dir = getattr(config, 'CHAT_LOGS_DIR', os.path.join(config.PROJECT_ROOT, "data", "chat_logs"))
+
+            # チャットログディレクトリが存在しない場合は作成
+            if not os.path.exists(chat_logs_dir):
+                os.makedirs(chat_logs_dir, exist_ok=True)
+                return files
+
+            # 既存のファイルパスのセットを作成（重複を避けるため）
+            existing_paths = {f.get('path', '') for f in files}
+
+            # チャットログファイルをスキャン
+            for filename in os.listdir(chat_logs_dir):
+                if filename.endswith('.md'):
+                    chat_log_path = os.path.join(chat_logs_dir, filename)
+
+                    # 既にリストに存在する場合はスキップ
+                    if chat_log_path in existing_paths:
+                        continue
+
+                    # ファイル情報を作成
+                    chat_log_info = {
+                        'title': f"[CHAT] {filename}",  # チャットログであることを示すプレフィックス
+                        'path': chat_log_path,
+                        'tags': ['chat-log', 'alice'],  # 特別なタグを設定
+                        'status': 'active',
+                        'order_index': 0,
+                        'is_chat_log': True  # チャットログであることを示すフラグ
+                    }
+
+                    files.append(chat_log_info)
+
+            return files
+
+        except Exception as e:
+            print(f"Error adding chat logs to file list: {e}")
+            return files
 
     # 2. データベース同期機能：フォルダとDBを同期する新機能
     def sync_database(self):

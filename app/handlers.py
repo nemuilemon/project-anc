@@ -687,3 +687,137 @@ class AppHandlers:
                 "file_list": [],
                 "message": f"プレビュー取得エラー: {str(e)}"
             }
+
+    # ========== CHAT HANDLERS ==========
+
+    def handle_send_chat_message(self, user_message: str, alice_response: str):
+        """チャットメッセージ送受信のハンドラ"""
+        try:
+            from logger import log_chat
+
+            # ログにチャットメッセージを記録
+            log_chat(f"User: {user_message[:100]}{'...' if len(user_message) > 100 else ''}")
+            log_chat(f"Alice: {alice_response[:100]}{'...' if len(alice_response) > 100 else ''}")
+
+            # チャットログファイルに保存
+            self._save_chat_log(user_message, alice_response)
+
+        except Exception as e:
+            from logger import log_error
+            log_error(e, "handle_send_chat_message")
+            print(f"Error in handle_send_chat_message: {e}")
+
+    def _save_chat_log(self, user_message: str, alice_response: str):
+        """チャットログをファイルに保存する"""
+        try:
+            import os
+            from datetime import datetime
+            import config
+
+            # チャットログディレクトリを作成
+            chat_logs_dir = getattr(config, 'CHAT_LOGS_DIR', os.path.join(config.PROJECT_ROOT, "data", "chat_logs"))
+            os.makedirs(chat_logs_dir, exist_ok=True)
+
+            # 日付ベースのログファイル名
+            today = datetime.now().strftime("%Y-%m-%d")
+            log_file_path = os.path.join(chat_logs_dir, f"{today}.md")
+
+            # ログエントリを作成
+            timestamp = datetime.now().strftime("%H:%M:%S")
+            log_entry = f"""
+## {timestamp}
+
+**ご主人様:**
+{user_message}
+
+**ありす:**
+{alice_response}
+
+---
+
+"""
+
+            # ファイルに追記（リトライ機構付き）
+            self._write_chat_log_with_retry(log_file_path, log_entry, today)
+
+            from logger import log_chat
+            log_chat(f"Chat log saved to: {log_file_path}")
+
+        except Exception as e:
+            from logger import log_error
+            log_error(e, "save_chat_log")
+            print(f"Failed to save chat log: {e}")
+
+    def _write_chat_log_with_retry(self, log_file_path: str, log_entry: str, today: str, max_retries: int = 3):
+        """リトライ機構付きでチャットログを書き込む
+
+        Args:
+            log_file_path (str): ログファイルのパス
+            log_entry (str): 書き込むログエントリ
+            today (str): 今日の日付文字列
+            max_retries (int): 最大リトライ回数
+        """
+        import time
+
+        for attempt in range(max_retries):
+            try:
+                # ファイルが存在するかチェック
+                file_exists = os.path.exists(log_file_path)
+                file_size = os.path.getsize(log_file_path) if file_exists else 0
+
+                # ファイルを追記モードで開く（共有アクセス対応）
+                with open(log_file_path, 'a', encoding='utf-8', buffering=1) as f:
+                    # ファイルが新規作成の場合はヘッダーを追加
+                    if file_size == 0:
+                        f.write(f"# ありすとの対話ログ - {today}\n\n")
+
+                    # ログエントリを書き込み
+                    f.write(log_entry)
+                    f.flush()  # バッファを強制的に書き込み
+
+                # 成功したらリターン
+                return
+
+            except PermissionError as pe:
+                if attempt < max_retries - 1:
+                    # ファイルがロックされている場合、少し待ってリトライ
+                    print(f"Chat log file is locked, retrying in {0.5 * (attempt + 1)}s... (attempt {attempt + 1}/{max_retries})")
+                    time.sleep(0.5 * (attempt + 1))  # 指数バックオフ
+                else:
+                    # 最後の試行でも失敗した場合、代替手段を試行
+                    self._write_to_backup_log(log_entry, today)
+                    raise pe
+
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    print(f"Chat log write error, retrying... (attempt {attempt + 1}/{max_retries}): {e}")
+                    time.sleep(0.5 * (attempt + 1))
+                else:
+                    # 最後の試行でも失敗した場合、代替手段を試行
+                    self._write_to_backup_log(log_entry, today)
+                    raise e
+
+    def _write_to_backup_log(self, log_entry: str, today: str):
+        """バックアップログファイルに書き込む
+
+        Args:
+            log_entry (str): 書き込むログエントリ
+            today (str): 今日の日付文字列
+        """
+        try:
+            import config
+            chat_logs_dir = getattr(config, 'CHAT_LOGS_DIR', os.path.join(config.PROJECT_ROOT, "data", "chat_logs"))
+            backup_log_path = os.path.join(chat_logs_dir, f"{today}_backup.md")
+
+            with open(backup_log_path, 'a', encoding='utf-8', buffering=1) as f:
+                if os.path.getsize(backup_log_path) == 0:
+                    f.write(f"# ありすとの対話ログ (バックアップ) - {today}\n\n")
+                f.write(log_entry)
+                f.flush()
+
+            print(f"Chat log written to backup file: {backup_log_path}")
+
+        except Exception as backup_error:
+            print(f"Failed to write to backup log: {backup_error}")
+            # 最終手段：標準出力にログを出力
+            print(f"CHAT LOG ENTRY:\n{log_entry}")
