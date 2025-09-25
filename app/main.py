@@ -7,7 +7,7 @@ from tinydb import TinyDB
 # Add config directory to path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'config'))
 import config
-from ui import AppUI
+from ui_redesign import RedesignedAppUI  # 新しいUI実装を使用
 from logic import AppLogic
 from handlers import AppHandlers
 from logger import app_logger, PerformanceTimer
@@ -93,9 +93,9 @@ def main(page: ft.Page):
     # Create centralized event handlers (app_ui will be set later)
     handlers = AppHandlers(page, app_logic, None, cancel_event)
     
-    # AppUIのインスタンス作成とエラーハンドリング
+    # RedesignedAppUIのインスタンス作成とエラーハンドリング
     try:
-        app_ui = AppUI(
+        app_ui = RedesignedAppUI(
             page,
             on_open_file=handlers.handle_open_file,
             on_save_file=handlers.handle_save_file,
@@ -128,8 +128,9 @@ def main(page: ft.Page):
 
         # Add handlers reference to UI for memory functionality
         app_ui.handlers = handlers
-        
-        page.appbar = app_ui.appbar
+
+        # 新しいUIではappbarは使用しないため、設定を省略
+        # page.appbar = app_ui.appbar  # コメントアウト
         page.add(app_ui.build())
 
         # 初期ファイルリストの読み込み
