@@ -8,7 +8,8 @@ This module implements the new UI design as specified in the redesign specificat
 import flet as ft
 import datetime
 from alice_chat_manager import AliceChatManager
-from sidebar_tabs import FileTab, EditorArea, AutomationAnalysisTab, SettingsTab
+from memory_creation_manager import MemoryCreationManager
+from sidebar_tabs import FileTab, EditorArea, AutomationAnalysisTab, SettingsTab, MemoryCreationTab
 
 
 class MainConversationArea(ft.Container):
@@ -136,6 +137,7 @@ class MainConversationArea(ft.Container):
 
         # Flexプロパティ（2/3の領域を占有）
         self.expand = 2
+        self.thinking_indicator = None
 
     def _send_message(self, e=None):
         """メッセージ送信処理"""
@@ -153,6 +155,26 @@ class MainConversationArea(ft.Container):
         # AIアシスタントにメッセージを送信
         if self.on_send_message:
             self.on_send_message(message)
+
+    def show_thinking_indicator(self):
+        """AIの思考中インジケーターを表示"""
+        if self.thinking_indicator is None:
+            self.thinking_indicator = ft.Container(
+                content=ft.Row([
+                    ft.ProgressRing(width=16, height=16, stroke_width=2),
+                    ft.Text("Alice is thinking...", style="italic", color=ft.Colors.GREY_600)
+                ]),
+                padding=ft.padding.all(10),
+                margin=ft.margin.symmetric(vertical=2)
+            )
+        self.chat_history_view.controls.append(self.thinking_indicator)
+        self.chat_history_view.update()
+
+    def hide_thinking_indicator(self):
+        """AIの思考中インジケーターを非表示"""
+        if self.thinking_indicator in self.chat_history_view.controls:
+            self.chat_history_view.controls.remove(self.thinking_indicator)
+            self.chat_history_view.update()
 
     def _add_message(self, sender, content, is_user=True):
         """チャット履歴にメッセージを追加"""
@@ -187,6 +209,7 @@ class MainConversationArea(ft.Container):
 
     def add_ai_response(self, response):
         """AIからの応答を表示"""
+        self.hide_thinking_indicator()
         self._add_message("Alice", response, is_user=False)
 
     def _clear_chat_history(self, e=None):
@@ -223,7 +246,7 @@ class AuxiliaryToolsSidebar(ft.Container):
         - 設定タブ: アプリケーション設定
     """
 
-    def __init__(self, on_file_operations=None, on_save_file=None, available_ai_functions=None, on_run_analysis=None, **kwargs):
+    def __init__(self, on_file_operations=None, on_save_file=None, available_ai_functions=None, on_run_analysis=None, memory_creation_manager=None, memories_dir=None, **kwargs):
         super().__init__(**kwargs)
 
         # コールバック関数
@@ -250,10 +273,16 @@ class AuxiliaryToolsSidebar(ft.Container):
 
         self.settings_tab = SettingsTab()
 
+        self.memory_creation_tab = MemoryCreationTab(
+            memory_creation_manager=memory_creation_manager,
+            memories_dir=memories_dir
+        )
+
         # タブ構成
         self.tabs = ft.Tabs(
             selected_index=0,
             animation_duration=300,
+            expand=True,
             tabs=[
                 ft.Tab(
                     text="ファイル",
@@ -269,6 +298,11 @@ class AuxiliaryToolsSidebar(ft.Container):
                     text="分析",
                     icon=ft.Icons.ANALYTICS,
                     content=self.analysis_tab
+                ),
+                ft.Tab(
+                    text="記憶",
+                    icon=ft.Icons.AUTO_STORIES,
+                    content=self.memory_creation_tab
                 ),
                 ft.Tab(
                     text="設定",
@@ -333,7 +367,7 @@ class ConversationFirstUI(ft.Row):
 
     def __init__(self, page: ft.Page, on_send_message=None, alice_chat_manager=None,
                  on_file_operations=None, on_save_file=None, available_ai_functions=None,
-                 on_run_analysis=None, **kwargs):
+                 on_run_analysis=None, memory_creation_manager=None, memories_dir=None, **kwargs):
         super().__init__(**kwargs)
 
         self.page = page
@@ -349,7 +383,9 @@ class ConversationFirstUI(ft.Row):
             on_file_operations=on_file_operations,
             on_save_file=on_save_file,
             available_ai_functions=available_ai_functions,
-            on_run_analysis=on_run_analysis
+            on_run_analysis=on_run_analysis,
+            memory_creation_manager=memory_creation_manager,
+            memories_dir=memories_dir
         )
 
         # レイアウト構成
@@ -418,6 +454,16 @@ class RedesignedAppUI:
             except Exception as e:
                 print(f"Failed to initialize Alice Chat Manager: {e}")
 
+        # Memory Creation Managerを初期化
+        self.memory_creation_manager = None
+        self.memories_dir = None
+        if config:
+            try:
+                self.memory_creation_manager = MemoryCreationManager(config)
+                self.memories_dir = getattr(config, 'MEMORIES_DIR', None)
+            except Exception as e:
+                print(f"Failed to initialize Memory Creation Manager: {e}")
+
         # ファイル操作コールバックを整理
         file_operations = {
             'read': self._read_file,
@@ -434,7 +480,9 @@ class RedesignedAppUI:
             on_file_operations=file_operations,
             on_save_file=on_save_file,
             available_ai_functions=available_ai_functions,
-            on_run_analysis=self._handle_ai_analysis
+            on_run_analysis=self._handle_ai_analysis,
+            memory_creation_manager=self.memory_creation_manager,
+            memories_dir=self.memories_dir
         )
 
     def build(self):
@@ -456,11 +504,18 @@ class RedesignedAppUI:
         return ""
 
     def _handle_chat_message(self, message):
-        """チャットメッセージの処理"""
+        """チャッâメッセージの処理"""
         if self.alice_chat_manager:
             try:
+                # AIが応答を生成している間にインジケーターを表示
+                self.ui.conversation_area.show_thinking_indicator()
+
                 # Alice Chat Managerを使用してAIからの応答を取得
                 response = self.alice_chat_manager.send_message(message)
+
+                # インジケーターを非表示にしてから応答を表示
+                self.ui.conversation_area.hide_thinking_indicator()
+
                 if response:
                     self.ui.add_ai_response(response)
 
@@ -470,6 +525,7 @@ class RedesignedAppUI:
 
             except Exception as e:
                 print(f"Error in chat message handling: {e}")
+                self.ui.conversation_area.hide_thinking_indicator()
                 self.ui.add_ai_response("申し訳ございませんが、エラーが発生しました。")
         else:
             # Alice Chat Managerが利用できない場合のフォールバック

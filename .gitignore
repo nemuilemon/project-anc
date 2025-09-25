@@ -30,3 +30,7 @@ logs/
 
 # User data
 data/notes/
+data/
+data/chat_logs/
+/data
+data/chat_logs/2025-09-25.md

@@ -7,6 +7,153 @@
 import flet as ft
 import os
 from typing import Dict, List, Optional, Callable
+import datetime
+
+
+class MemoryCreationTab(ft.Container):
+    """記憶生成タブ: 特定の日のチャットログから記憶を生成するUI
+
+    Features:
+        - 日付選択
+        - 記憶生成の実行
+        - 生成された記憶のプレビューと編集
+        - 記憶の保存
+    """
+
+    def __init__(self, memory_creation_manager=None, memories_dir=None, **kwargs):
+        super().__init__(**kwargs)
+
+        self.memory_creation_manager = memory_creation_manager
+        self.memories_dir = memories_dir
+
+        # --- UI Controls ---
+        self.date_picker = ft.DatePicker(
+            first_date=datetime.datetime(2020, 1, 1),
+            last_date=datetime.datetime.now() + datetime.timedelta(days=30),
+            on_change=self._on_date_selected
+        )
+
+        self.selected_date_text = ft.Text(
+            datetime.datetime.now().strftime("%Y-%m-%d"),
+            size=14, weight=ft.FontWeight.BOLD
+        )
+
+        self.pick_date_button = ft.ElevatedButton(
+            "日付選択",
+            icon=ft.Icons.CALENDAR_MONTH,
+            on_click=lambda e: self.page.open(self.date_picker)
+        )
+
+        self.create_memory_button = ft.ElevatedButton(
+            "記憶を生成",
+            icon=ft.Icons.AUTO_STORIES,
+            on_click=self._create_memory,
+            style=ft.ButtonStyle(bgcolor=ft.Colors.PURPLE, color=ft.Colors.WHITE)
+        )
+
+        self.progress_ring = ft.ProgressRing(visible=False, width=20, height=20)
+
+        self.edit_field = ft.TextField(
+            label="記憶の編集",
+            multiline=True,
+            min_lines=10,
+            max_lines=20, # Added max_lines for better layout
+            expand=True,
+            on_change=self._on_edit
+        )
+
+        self.save_button = ft.ElevatedButton(
+            "記憶を保存",
+            icon=ft.Icons.SAVE,
+            on_click=self._save_memory,
+            disabled=True
+        )
+
+        self.content = ft.Column([
+            ft.Container(
+                content=ft.Text("記憶生成ツール", size=14, weight=ft.FontWeight.BOLD),
+                padding=ft.padding.symmetric(horizontal=10, vertical=5),
+                bgcolor=ft.Colors.PURPLE_50,
+                border_radius=5
+            ),
+            ft.Container(
+                content=ft.Column([
+                    ft.Row([self.pick_date_button, self.selected_date_text], alignment=ft.MainAxisAlignment.CENTER, spacing=10),
+                    ft.Row([self.create_memory_button, self.save_button, self.progress_ring], alignment=ft.MainAxisAlignment.CENTER, spacing=10),
+                    self.edit_field,
+                ], spacing=15),
+                padding=ft.padding.all(15),
+                expand=True
+            )
+        ])
+
+    def _on_date_selected(self, e):
+        self.selected_date_text.value = self.date_picker.value.strftime("%Y-%m-%d")
+        self.selected_date_text.update()
+
+    def _create_memory(self, e):
+        if not self.memory_creation_manager:
+            self._show_error("記憶生成マネージャーが利用できません。")
+            return
+
+        target_date = self.selected_date_text.value
+        self.progress_ring.visible = True
+        self.create_memory_button.disabled = True
+        self.update()
+
+        try:
+            success, result = self.memory_creation_manager.create_memory(target_date)
+            if success:
+                self.edit_field.value = result
+                self.save_button.disabled = False
+            else:
+                self._show_error(result)
+        except Exception as ex:
+            self._show_error(f"記憶の生成中にエラーが発生しました: {ex}")
+        finally:
+            self.progress_ring.visible = False
+            self.create_memory_button.disabled = False
+            self.update()
+
+    def _on_edit(self, e):
+        self.save_button.disabled = not bool(self.edit_field.value.strip())
+        self.update()
+
+    def _save_memory(self, e):
+        if not self.memories_dir:
+            self._show_error("記憶の保存先ディレクトリが設定されていません。")
+            return
+
+        target_date = self.selected_date_text.value
+        memory_content = self.edit_field.value
+
+        if not memory_content.strip():
+            self._show_error("保存する内容がありません。")
+            return
+
+        try:
+            # Format the filename as memory-YY.MM.DD.md
+            date_obj = datetime.datetime.strptime(target_date, "%Y-%m-%d")
+            formatted_date = date_obj.strftime("%y.%m.%d")
+            file_name = f"memory-{formatted_date}.md"
+            file_path = os.path.join(self.memories_dir, file_name)
+
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write(memory_content)
+
+            self.page.snack_bar = ft.SnackBar(content=ft.Text("記憶を保存しました。"), bgcolor=ft.Colors.GREEN)
+            self.page.snack_bar.open = True
+            self.page.update()
+            self.save_button.disabled = True
+            self.update()
+
+        except Exception as ex:
+            self._show_error(f"記憶の保存中にエラーが発生しました: {ex}")
+
+    def _show_error(self, message):
+        self.page.snack_bar = ft.SnackBar(content=ft.Text(message), bgcolor=ft.Colors.RED)
+        self.page.snack_bar.open = True
+        self.page.update()
 
 
 class FileTab(ft.Container):
@@ -292,8 +439,8 @@ class EditorArea(ft.Container):
         new_tab = ft.Tab(
             text=file_name,
             content=tab_content,
-            data=file_path  # ファイルパスを保存
         )
+        new_tab.data = file_path  # ファイルパスを保存
 
         self.editor_tabs.tabs.append(new_tab)
         self.open_tabs[file_path] = {
@@ -340,7 +487,7 @@ class EditorArea(ft.Container):
             content = tab_info['editor'].value
 
             if self.on_save_file:
-                self.on_save_file(tab_info['info'], content)
+                self.on_save_file(file_path, content)
 
             # 変更フラグをクリア
             tab_info['modified'] = False
