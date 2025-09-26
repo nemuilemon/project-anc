@@ -198,9 +198,12 @@ class AliceChatManager:
         try:
             from datetime import datetime
             import os
+            import sys
+            sys.path.append(os.path.dirname(__file__))
+            from date_utils import get_current_log_date
 
-            # 今日の日付でログファイルパスを構築
-            today = datetime.now().strftime("%Y-%m-%d")
+            # 3AM ルールに基づいて今日のログ日付を決定
+            today = get_current_log_date()
             chat_logs_dir = getattr(self.config, 'CHAT_LOGS_DIR',
                                   os.path.join(getattr(self.config, 'PROJECT_ROOT', '.'), "data", "chat_logs"))
             log_file_path = os.path.join(chat_logs_dir, f"{today}.md")

@@ -72,6 +72,9 @@ class AppLogic:
         # 記憶ファイルを追加
         files = self._add_memory_files_to_file_list(files, show_archived)
 
+        # 日報ファイルを追加
+        files = self._add_nippo_files_to_file_list(files, show_archived)
+
         # ファイル名でアルファベット順にソート
         files.sort(key=lambda x: x.get('title', '').lower())
         return files
@@ -172,6 +175,56 @@ class AppLogic:
 
         except Exception as e:
             print(f"Error adding memory files to file list: {e}")
+            return files
+
+    def _add_nippo_files_to_file_list(self, files, show_archived=False):
+        """日報ファイルをファイルリストに追加する。
+
+        Args:
+            files (list): 既存のファイルリスト
+            show_archived (bool): アーカイブされたファイルも含めるか
+
+        Returns:
+            list: 日報ファイルが追加されたファイルリスト
+        """
+        try:
+            nippo_dir = getattr(config, 'NIPPO_DIR', '')
+            if not nippo_dir:
+                return files
+
+            # 日報ディレクトリが存在しない場合は作成
+            if not os.path.exists(nippo_dir):
+                os.makedirs(nippo_dir, exist_ok=True)
+                return files
+
+            # 既存のファイルパスのセットを作成（重複を避けるため）
+            existing_paths = {f.get('path', '') for f in files}
+
+            # 日報ファイルをスキャン
+            for filename in os.listdir(nippo_dir):
+                if filename.endswith('.md'):
+                    nippo_file_path = os.path.join(nippo_dir, filename)
+
+                    # 既にリストに存在する場合はスキップ
+                    if nippo_file_path in existing_paths:
+                        continue
+
+                    # ファイル情報を作成
+                    nippo_info = {
+                        'title': f"[NIPPO] {filename}",  # 日報ファイルであることを示すプレフィックス
+                        'path': nippo_file_path,
+                        'tags': ['nippo', 'daily-report', 'school'],  # 特別なタグを設定
+                        'status': 'active',
+                        'order_index': 0,
+                        'is_nippo_file': True  # 日報ファイルであることを示すフラグ
+                    }
+
+                    files.append(nippo_info)
+
+            return files
+
+        except Exception as e:
+            print(f"Error adding nippo files to file list: {e}")
             return files
 
     # 2. データベース同期機能：フォルダとDBを同期する新機能

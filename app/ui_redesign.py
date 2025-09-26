@@ -9,7 +9,8 @@ import flet as ft
 import datetime
 from alice_chat_manager import AliceChatManager
 from memory_creation_manager import MemoryCreationManager
-from sidebar_tabs import FileTab, EditorArea, AutomationAnalysisTab, SettingsTab, MemoryCreationTab
+from nippo_creation_manager import NippoCreationManager
+from sidebar_tabs import FileTab, EditorArea, AutomationAnalysisTab, SettingsTab, MemoryCreationTab, NippoCreationTab
 
 
 class MainConversationArea(ft.Container):
@@ -246,7 +247,7 @@ class AuxiliaryToolsSidebar(ft.Container):
         - 設定タブ: アプリケーション設定
     """
 
-    def __init__(self, on_file_operations=None, on_save_file=None, available_ai_functions=None, on_run_analysis=None, memory_creation_manager=None, memories_dir=None, **kwargs):
+    def __init__(self, on_file_operations=None, on_save_file=None, available_ai_functions=None, on_run_analysis=None, memory_creation_manager=None, memories_dir=None, nippo_creation_manager=None, nippo_dir=None, **kwargs):
         super().__init__(**kwargs)
 
         # コールバック関数
@@ -278,6 +279,12 @@ class AuxiliaryToolsSidebar(ft.Container):
             memories_dir=memories_dir
         )
 
+        self.nippo_creation_tab = NippoCreationTab(
+            nippo_creation_manager=nippo_creation_manager,
+            nippo_dir=nippo_dir,
+            memories_dir=memories_dir
+        )
+
         # タブ構成
         self.tabs = ft.Tabs(
             selected_index=0,
@@ -303,6 +310,11 @@ class AuxiliaryToolsSidebar(ft.Container):
                     text="記憶",
                     icon=ft.Icons.AUTO_STORIES,
                     content=self.memory_creation_tab
+                ),
+                ft.Tab(
+                    text="日報",
+                    icon=ft.Icons.ARTICLE,
+                    content=self.nippo_creation_tab
                 ),
                 ft.Tab(
                     text="設定",
@@ -367,7 +379,8 @@ class ConversationFirstUI(ft.Row):
 
     def __init__(self, page: ft.Page, on_send_message=None, alice_chat_manager=None,
                  on_file_operations=None, on_save_file=None, available_ai_functions=None,
-                 on_run_analysis=None, memory_creation_manager=None, memories_dir=None, **kwargs):
+                 on_run_analysis=None, memory_creation_manager=None, memories_dir=None,
+                 nippo_creation_manager=None, nippo_dir=None, **kwargs):
         super().__init__(**kwargs)
 
         self.page = page
@@ -385,7 +398,9 @@ class ConversationFirstUI(ft.Row):
             available_ai_functions=available_ai_functions,
             on_run_analysis=on_run_analysis,
             memory_creation_manager=memory_creation_manager,
-            memories_dir=memories_dir
+            memories_dir=memories_dir,
+            nippo_creation_manager=nippo_creation_manager,
+            nippo_dir=nippo_dir
         )
 
         # レイアウト構成
@@ -464,6 +479,16 @@ class RedesignedAppUI:
             except Exception as e:
                 print(f"Failed to initialize Memory Creation Manager: {e}")
 
+        # Nippo Creation Managerを初期化
+        self.nippo_creation_manager = None
+        self.nippo_dir = None
+        if config:
+            try:
+                self.nippo_creation_manager = NippoCreationManager(config)
+                self.nippo_dir = getattr(config, 'NIPPO_DIR', None)
+            except Exception as e:
+                print(f"Failed to initialize Nippo Creation Manager: {e}")
+
         # ファイル操作コールバックを整理
         file_operations = {
             'read': self._read_file,
@@ -482,7 +507,9 @@ class RedesignedAppUI:
             available_ai_functions=available_ai_functions,
             on_run_analysis=self._handle_ai_analysis,
             memory_creation_manager=self.memory_creation_manager,
-            memories_dir=self.memories_dir
+            memories_dir=self.memories_dir,
+            nippo_creation_manager=self.nippo_creation_manager,
+            nippo_dir=self.nippo_dir
         )
 
     def build(self):

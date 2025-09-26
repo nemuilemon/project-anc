@@ -156,6 +156,222 @@ class MemoryCreationTab(ft.Container):
         self.page.update()
 
 
+class NippoCreationTab(ft.Container):
+    """日報生成タブ: 記憶から学校提出用の日報を生成するUI
+
+    Features:
+        - 日付選択
+        - 選択した日付の記憶ファイルを読み込み表示
+        - 日報生成の実行
+        - 生成された日報（JSONL形式）のプレビューと編集
+        - 日報の保存
+    """
+
+    def __init__(self, nippo_creation_manager=None, nippo_dir=None, memories_dir=None, **kwargs):
+        super().__init__(**kwargs)
+
+        self.nippo_creation_manager = nippo_creation_manager
+        self.nippo_dir = nippo_dir
+        self.memories_dir = memories_dir
+
+        # --- UI Controls ---
+        self.date_picker = ft.DatePicker(
+            first_date=datetime.datetime(2020, 1, 1),
+            last_date=datetime.datetime.now() + datetime.timedelta(days=30),
+            on_change=self._on_date_selected
+        )
+
+        self.selected_date_text = ft.Text(
+            datetime.datetime.now().strftime("%Y-%m-%d"),
+            size=14, weight=ft.FontWeight.BOLD
+        )
+
+        self.pick_date_button = ft.ElevatedButton(
+            "日付選択",
+            icon=ft.Icons.CALENDAR_MONTH,
+            on_click=lambda e: self.page.open(self.date_picker)
+        )
+
+        # Memory display (read-only)
+        self.memory_field = ft.TextField(
+            label="対象の記憶",
+            multiline=True,
+            min_lines=5,
+            max_lines=10,
+            read_only=True,
+            expand=False
+        )
+
+        self.load_memory_button = ft.ElevatedButton(
+            "記憶を読み込み",
+            icon=ft.Icons.DOWNLOAD,
+            on_click=self._load_memory
+        )
+
+        self.create_nippo_button = ft.ElevatedButton(
+            "日報を生成",
+            icon=ft.Icons.ARTICLE,
+            on_click=self._create_nippo,
+            style=ft.ButtonStyle(bgcolor=ft.Colors.BLUE, color=ft.Colors.WHITE)
+        )
+
+        self.progress_ring = ft.ProgressRing(visible=False, width=20, height=20)
+
+        # Nippo result display (editable)
+        self.nippo_result_field = ft.TextField(
+            label="生成された日報（JSONL形式）",
+            multiline=True,
+            min_lines=8,
+            max_lines=15,
+            expand=True,
+            on_change=self._on_nippo_edit
+        )
+
+        self.save_nippo_button = ft.ElevatedButton(
+            "日報を保存",
+            icon=ft.Icons.SAVE,
+            on_click=self._save_nippo,
+            disabled=True
+        )
+
+        self.content = ft.Column([
+            ft.Container(
+                content=ft.Text("日報生成ツール", size=14, weight=ft.FontWeight.BOLD),
+                padding=ft.padding.symmetric(horizontal=10, vertical=5),
+                bgcolor=ft.Colors.BLUE_50,
+                border_radius=5
+            ),
+            ft.Container(
+                content=ft.Column([
+                    ft.Row([self.pick_date_button, self.selected_date_text], alignment=ft.MainAxisAlignment.CENTER, spacing=10),
+                    self.load_memory_button,
+                    self.memory_field,
+                    ft.Row([self.create_nippo_button, self.progress_ring], alignment=ft.MainAxisAlignment.CENTER, spacing=10),
+                    self.nippo_result_field,
+                    self.save_nippo_button,
+                ], spacing=15),
+                padding=ft.padding.all(15),
+                expand=True
+            )
+        ])
+
+    def _on_date_selected(self, e):
+        self.selected_date_text.value = self.date_picker.value.strftime("%Y-%m-%d")
+        self.selected_date_text.update()
+        # Clear previous memory when date changes
+        self.memory_field.value = ""
+        self.nippo_result_field.value = ""
+        self.save_nippo_button.disabled = True
+        self.update()
+
+    def _load_memory(self, e):
+        """指定された日付の記憶ファイルを読み込む"""
+        if not self.memories_dir:
+            self._show_error("記憶ファイルのディレクトリが設定されていません。")
+            return
+
+        target_date = self.selected_date_text.value
+
+        try:
+            # Convert YYYY-MM-DD to YY.MM.DD format for memory filename
+            date_obj = datetime.datetime.strptime(target_date, "%Y-%m-%d")
+            memory_filename = f"memory-{date_obj.strftime('%y.%m.%d')}.md"
+            memory_file_path = os.path.join(self.memories_dir, memory_filename)
+
+            if not os.path.exists(memory_file_path):
+                self._show_error(f"指定された日付（{target_date}）の記憶ファイルが見つかりません。")
+                return
+
+            with open(memory_file_path, 'r', encoding='utf-8') as f:
+                memory_content = f.read()
+
+            self.memory_field.value = memory_content
+            self.update()
+
+            self.page.snack_bar = ft.SnackBar(
+                content=ft.Text(f"記憶を読み込みました: {memory_filename}"),
+                bgcolor=ft.Colors.GREEN
+            )
+            self.page.snack_bar.open = True
+            self.page.update()
+
+        except Exception as ex:
+            self._show_error(f"記憶ファイルの読み込み中にエラーが発生しました: {ex}")
+
+    def _create_nippo(self, e):
+        """日報を生成する"""
+        if not self.nippo_creation_manager:
+            self._show_error("日報生成マネージャーが利用できません。")
+            return
+
+        if not self.memory_field.value.strip():
+            self._show_error("記憶が読み込まれていません。先に記憶を読み込んでください。")
+            return
+
+        target_date = self.selected_date_text.value
+        self.progress_ring.visible = True
+        self.create_nippo_button.disabled = True
+        self.update()
+
+        try:
+            success, result = self.nippo_creation_manager.create_nippo(target_date)
+            if success:
+                self.nippo_result_field.value = result
+                self.save_nippo_button.disabled = False
+            else:
+                self._show_error(result)
+        except Exception as ex:
+            self._show_error(f"日報の生成中にエラーが発生しました: {ex}")
+        finally:
+            self.progress_ring.visible = False
+            self.create_nippo_button.disabled = False
+            self.update()
+
+    def _on_nippo_edit(self, e):
+        self.save_nippo_button.disabled = not bool(self.nippo_result_field.value.strip())
+        self.update()
+
+    def _save_nippo(self, e):
+        """生成された日報を保存する"""
+        if not self.nippo_dir:
+            self._show_error("日報の保存先ディレクトリが設定されていません。")
+            return
+
+        target_date = self.selected_date_text.value
+        nippo_content = self.nippo_result_field.value
+
+        if not nippo_content.strip():
+            self._show_error("保存する日報の内容がありません。")
+            return
+
+        try:
+            # Format the filename as nippo-YY.MM.DD.md
+            date_obj = datetime.datetime.strptime(target_date, "%Y-%m-%d")
+            formatted_date = date_obj.strftime("%y.%m.%d")
+            file_name = f"nippo-{formatted_date}.md"
+            file_path = os.path.join(self.nippo_dir, file_name)
+
+            # Ensure nippo directory exists
+            os.makedirs(self.nippo_dir, exist_ok=True)
+
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write(nippo_content)
+
+            self.page.snack_bar = ft.SnackBar(content=ft.Text("日報を保存しました。"), bgcolor=ft.Colors.GREEN)
+            self.page.snack_bar.open = True
+            self.page.update()
+            self.save_nippo_button.disabled = True
+            self.update()
+
+        except Exception as ex:
+            self._show_error(f"日報の保存中にエラーが発生しました: {ex}")
+
+    def _show_error(self, message):
+        self.page.snack_bar = ft.SnackBar(content=ft.Text(message), bgcolor=ft.Colors.RED)
+        self.page.snack_bar.open = True
+        self.page.update()
+
+
 class FileTab(ft.Container):
     """ファイル・タブ: プロジェクト内のディレクトリ構造を管理
 

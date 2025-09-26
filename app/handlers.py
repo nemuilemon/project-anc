@@ -718,13 +718,14 @@ class AppHandlers:
             import os
             from datetime import datetime
             import config
+            from date_utils import get_current_log_date
 
             # チャットログディレクトリを作成
             chat_logs_dir = getattr(config, 'CHAT_LOGS_DIR', os.path.join(config.PROJECT_ROOT, "data", "chat_logs"))
             os.makedirs(chat_logs_dir, exist_ok=True)
 
-            # 日付ベースのログファイル名
-            today = datetime.now().strftime("%Y-%m-%d")
+            # 3AM ルールに基づいてログ日付を決定
+            today = get_current_log_date()
             log_file_path = os.path.join(chat_logs_dir, f"{today}.md")
 
             # ログエントリを作成

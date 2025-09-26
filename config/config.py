@@ -60,11 +60,17 @@ ALICE_MEMORY_FILE_PATH = os.path.join(NOTES_DIR, "0-Memory.md")
 # 記憶ファイルを保存するディレクトリ
 MEMORIES_DIR = os.path.join(PROJECT_ROOT, "data", "memories")
 
+# 日報ファイルを保存するディレクトリ
+NIPPO_DIR = os.path.join(PROJECT_ROOT, "data", "nippo")
+
 # プロンプトファイルを保存するディレクトリ
 PROMPTS_DIR = os.path.join(PROJECT_ROOT, "prompts")
 
 # 記憶生成用プロンプトファイルのパス
 CREATE_MEMORY_PROMPT_PATH = os.path.join(PROMPTS_DIR, "create_memory_prompt.md")
+
+# 日報生成用プロンプトファイルのパス
+CREATE_NIPPO_PROMPT_PATH = os.path.join(PROMPTS_DIR, "create_nippo_prompt.md")
 
 # Alice Chat ログディレクトリ
 CHAT_LOGS_DIR = os.path.join(PROJECT_ROOT, "data", "chat_logs")
