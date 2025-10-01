@@ -1,0 +1,16 @@
+# Development Requirements
+# Install with: pip install -r requirements.txt -r requirements-dev.txt
+
+# Testing (when tests are rebuilt)
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+pytest-cov>=4.1.0
+
+# Code Quality
+black>=23.0.0  # Code formatter
+isort>=5.12.0  # Import sorter
+flake8>=6.0.0  # Linter
+mypy>=1.5.0  # Type checker
+
+# Development Tools
+ipython>=8.14.0  # Enhanced REPL

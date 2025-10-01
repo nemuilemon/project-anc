@@ -1,3 +1,16 @@
-flet>=0.21.0
+# Core UI Framework
+flet>=0.28.0
+
+# Database
 tinydb>=4.8.0
-ollama>=0.1.7
+
+# AI/ML Services
+google-genai>=1.38.0  # Google Gemini API for Alice chat
+ollama>=0.5.0  # Local AI model support for analysis plugins
+
+# Note: Standard library modules used (no additional requirements):
+# - asyncio, threading (async operations)
+# - json, os, sys, pathlib (file operations)
+# - datetime, time (time handling)
+# - logging (application logging)
+# - dataclasses, typing (type hints)

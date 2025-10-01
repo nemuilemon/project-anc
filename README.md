@@ -59,10 +59,17 @@ source .venv/bin/activate
 # 3. Install dependencies
 pip install -r requirements.txt
 
-# 4. Set up AI models (optional but recommended)
-ollama pull llama3.1:8b
+# 4. (Optional) Install development dependencies
+pip install -r requirements-dev.txt
 
-# 5. Run the application
+# 5. Configure API keys
+# Create .env file or set environment variable:
+# GEMINI_API_KEY=your_api_key_here
+
+# 6. Set up AI models (optional, for analysis plugins)
+ollama pull gemma3:4b
+
+# 7. Run the application
 python main.py
 ```
 
