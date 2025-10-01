@@ -11,6 +11,7 @@ from datetime import datetime
 from typing import List, Dict, Any, Optional
 from google import genai
 from google.genai import types
+from state_manager import app_state
 
 class AliceChatManager:
     """Manages conversations with Alice using Gemini API.
@@ -32,12 +33,15 @@ class AliceChatManager:
         self.client = None
         self.system_instruction = ""
         self.long_term_memory = ""
-        self.history = []
         self.max_history_length = getattr(config, 'ALICE_CHAT_CONFIG', {}).get('max_history_length', 50)
 
         # Dialog logs directory
         self.dialog_logs_dir = os.path.join(getattr(config, 'PROJECT_ROOT', '.'), "logs", "dialogs")
         os.makedirs(self.dialog_logs_dir, exist_ok=True)
+
+        # Initialize conversation in AppState
+        session_id = f"alice_session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        app_state.init_conversation(session_id)
 
         # Initialize API client
         self._init_client()
@@ -173,13 +177,8 @@ class AliceChatManager:
             return "メッセージを入力してください。"
 
         try:
-            # Add user message to history
-            user_entry = {
-                'role': 'user',
-                'content': user_message.strip(),
-                'timestamp': time.time()
-            }
-            self.history.append(user_entry)
+            # Add user message to AppState
+            app_state.add_conversation_message('user', user_message.strip())
 
             # Prepare conversation contents for API
             contents = self._prepare_contents()
@@ -211,13 +210,8 @@ class AliceChatManager:
             # Save to daily chat log
             self._save_to_chat_log(user_message, response_text)
 
-            # Add Alice's response to history
-            alice_entry = {
-                'role': 'model',
-                'content': response_text,
-                'timestamp': time.time()
-            }
-            self.history.append(alice_entry)
+            # Add Alice's response to AppState
+            app_state.add_conversation_message('model', response_text)
 
             # Trim history if it's too long
             self._trim_history()
@@ -257,18 +251,19 @@ class AliceChatManager:
         if today_log_content:
             contents.append(f"=== 今日の会話履歴 ===\n{today_log_content}")
 
-        # 3. 現在のセッション履歴（self.history）
-        if self.history:
+        # 3. 現在のセッション履歴（AppStateから取得）
+        history = app_state.get_conversation_messages()
+        if history:
             chatbox_content = "=== 現在のセッション ===\n"
-            for entry in self.history:
+            for entry in history:
                 role_name = "ご主人様" if entry['role'] == 'user' else "ありす"
                 chatbox_content += f"\n**{role_name}:**\n{entry['content']}\n"
 
             contents.append(chatbox_content)
 
         # 4. 最新のユーザーメッセージを明示的に追加（APIが確実に認識するため）
-        if self.history and self.history[-1]['role'] == 'user':
-            contents.append(f"最新メッセージ: {self.history[-1]['content']}")
+        if history and history[-1]['role'] == 'user':
+            contents.append(f"最新メッセージ: {history[-1]['content']}")
 
         return contents if contents else ["こんにちは"]
 
@@ -318,9 +313,15 @@ class AliceChatManager:
 
     def _trim_history(self):
         """Trim conversation history to maintain performance."""
-        if len(self.history) > self.max_history_length:
+        history = app_state.get_conversation_messages()
+        if len(history) > self.max_history_length:
             # Keep the most recent messages
-            self.history = self.history[-self.max_history_length:]
+            # Re-initialize conversation with trimmed history
+            session_id = f"alice_session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            app_state.clear_conversation()
+            app_state.init_conversation(session_id)
+            for msg in history[-self.max_history_length:]:
+                app_state.add_conversation_message(msg['role'], msg['content'], msg.get('metadata'))
 
     def get_history(self) -> List[Dict[str, Any]]:
         """Get the conversation history.
@@ -328,11 +329,14 @@ class AliceChatManager:
         Returns:
             List[Dict[str, Any]]: List of conversation entries
         """
-        return self.history.copy()
+        return app_state.get_conversation_messages()
 
     def clear_history(self):
         """Clear the conversation history."""
-        self.history.clear()
+        app_state.clear_conversation()
+        # Re-initialize for new session
+        session_id = f"alice_session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        app_state.init_conversation(session_id)
         print("Conversation history cleared")
 
     def get_conversation_summary(self) -> Dict[str, Any]:
@@ -341,16 +345,19 @@ class AliceChatManager:
         Returns:
             Dict[str, Any]: Conversation summary with statistics
         """
-        total_messages = len(self.history)
-        user_messages = len([msg for msg in self.history if msg['role'] == 'user'])
-        alice_messages = len([msg for msg in self.history if msg['role'] == 'model'])
+        history = app_state.get_conversation_messages()
+        conversation_state = app_state.get_conversation_state()
+
+        total_messages = len(history)
+        user_messages = len([msg for msg in history if msg['role'] == 'user'])
+        alice_messages = len([msg for msg in history if msg['role'] == 'model'])
 
         return {
             'total_messages': total_messages,
             'user_messages': user_messages,
             'alice_messages': alice_messages,
-            'conversation_started': self.history[0]['timestamp'] if self.history else None,
-            'last_message': self.history[-1]['timestamp'] if self.history else None
+            'conversation_started': conversation_state.started_at if conversation_state else None,
+            'last_message': conversation_state.last_message_at if conversation_state else None
         }
 
     def export_conversation(self, format_type: str = 'json') -> str:
@@ -362,15 +369,17 @@ class AliceChatManager:
         Returns:
             str: Formatted conversation history
         """
+        history = app_state.get_conversation_messages()
+
         if format_type.lower() == 'json':
-            return json.dumps(self.history, ensure_ascii=False, indent=2)
+            return json.dumps(history, ensure_ascii=False, indent=2)
 
         elif format_type.lower() == 'markdown':
             md_content = "# 会話履歴\n\n"
-            for entry in self.history:
-                timestamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(entry['timestamp']))
+            for entry in history:
+                timestamp_str = entry.get('timestamp', '')
                 role = "ご主人様" if entry['role'] == 'user' else "ありす"
-                md_content += f"## {role} ({timestamp})\n\n{entry['content']}\n\n"
+                md_content += f"## {role} ({timestamp_str})\n\n{entry['content']}\n\n"
             return md_content
 
         else:
