@@ -8,6 +8,14 @@ import flet as ft
 import os
 from typing import Dict, List, Optional, Callable
 import datetime
+from ui_components import (
+    DatePickerButton,
+    ProgressButton,
+    ExpandableSection,
+    EditableTextField,
+    FileListItem,
+    SectionHeader
+)
 
 
 class MemoryCreationTab(ft.Container):
@@ -36,47 +44,29 @@ class MemoryCreationTab(ft.Container):
         # 既存記憶ファイルのリスト
         self.existing_memories = []
 
-        # --- UI Controls ---
-        self.date_picker = ft.DatePicker(
-            first_date=datetime.datetime(2020, 1, 1),
-            last_date=datetime.datetime.now() + datetime.timedelta(days=30),
-            on_change=self._on_date_selected
+        # --- UI Controls using common components ---
+        # Date picker with button
+        self.date_picker_button = DatePickerButton(
+            label="日付選択",
+            initial_date=datetime.datetime.now(),
+            on_date_change=self._on_date_selected
         )
 
-        self.selected_date_text = ft.Text(
-            datetime.datetime.now().strftime("%Y-%m-%d"),
-            size=14, weight=ft.FontWeight.BOLD
-        )
-
-        self.pick_date_button = ft.ElevatedButton(
-            "日付選択",
-            icon=ft.Icons.CALENDAR_MONTH,
-            on_click=lambda e: self.page.open(self.date_picker)
-        )
-
-        self.create_memory_button = ft.ElevatedButton(
-            "記憶を生成",
+        # Progress button for memory creation
+        self.create_memory_button = ProgressButton(
+            text="記憶を生成",
             icon=ft.Icons.AUTO_STORIES,
             on_click=self._create_memory,
-            style=ft.ButtonStyle(bgcolor=ft.Colors.PURPLE, color=ft.Colors.WHITE)
+            button_style=ft.ButtonStyle(bgcolor=ft.Colors.PURPLE, color=ft.Colors.WHITE)
         )
 
-        self.progress_ring = ft.ProgressRing(visible=False, width=20, height=20)
-
-        self.edit_field = ft.TextField(
+        # Editable text field with save button
+        self.edit_field = EditableTextField(
             label="記憶の編集",
-            multiline=True,
             min_lines=10,
-            max_lines=20, # Added max_lines for better layout
-            expand=True,
-            on_change=self._on_edit
-        )
-
-        self.save_button = ft.ElevatedButton(
-            "記憶を保存",
-            icon=ft.Icons.SAVE,
-            on_click=self._save_memory,
-            disabled=True
+            max_lines=20,
+            on_save=self._save_memory,
+            save_button_text="記憶を保存"
         )
 
         # 既存記憶リスト表示エリア
@@ -89,38 +79,36 @@ class MemoryCreationTab(ft.Container):
         # 既存記憶ファイルを読み込み
         self._load_existing_memories()
 
-        # 展開可能セクションを作成
-        self.date_section = self._create_expandable_section(
-            "date_selection",
-            "日付選択・記憶生成",
-            ft.Icons.CALENDAR_MONTH,
-            [
-                ft.Row([self.pick_date_button, self.selected_date_text], alignment=ft.MainAxisAlignment.CENTER, spacing=10),
-                ft.Row([self.create_memory_button, self.save_button, self.progress_ring], alignment=ft.MainAxisAlignment.CENTER, spacing=10)
-            ]
+        # 展開可能セクションを作成（共通コンポーネント使用）
+        self.date_section = ExpandableSection(
+            title="日付選択・記憶生成",
+            icon=ft.Icons.CALENDAR_MONTH,
+            content_items=[
+                self.date_picker_button,
+                self.create_memory_button
+            ],
+            initial_expanded=False
         )
 
-        self.editing_section = self._create_expandable_section(
-            "memory_editing",
-            "記憶編集",
-            ft.Icons.EDIT,
-            [self.edit_field]
+        self.editing_section = ExpandableSection(
+            title="記憶編集",
+            icon=ft.Icons.EDIT,
+            content_items=[self.edit_field],
+            initial_expanded=False
         )
 
-        self.existing_section = self._create_expandable_section(
-            "existing_memories",
-            "既存の記憶",
-            ft.Icons.AUTO_STORIES,
-            [self.memories_list]
+        self.existing_section = ExpandableSection(
+            title="既存の記憶",
+            icon=ft.Icons.AUTO_STORIES,
+            content_items=[self.memories_list],
+            initial_expanded=False
         )
 
         self.content = ft.Column(
             [
-                ft.Container(
-                    content=ft.Text("記憶生成ツール", size=14, weight=ft.FontWeight.BOLD),
-                    padding=ft.padding.symmetric(horizontal=10, vertical=5),
-                    bgcolor=ft.Colors.PURPLE_50,
-                    border_radius=5
+                SectionHeader(
+                    title="記憶生成ツール",
+                    bgcolor=ft.Colors.PURPLE_50
                 ),
                 ft.Container(
                     content=ft.Column([
@@ -136,45 +124,38 @@ class MemoryCreationTab(ft.Container):
             expand=True
         )
 
-    def _on_date_selected(self, e):
-        self.selected_date_text.value = self.date_picker.value.strftime("%Y-%m-%d")
-        self.selected_date_text.update()
+    def _on_date_selected(self, selected_date):
+        """Handle date selection from DatePickerButton."""
+        # Date is already updated in the DatePickerButton component
+        pass
 
     def _create_memory(self, e):
         if not self.memory_creation_manager:
             self._show_error("記憶生成マネージャーが利用できません。")
             return
 
-        target_date = self.selected_date_text.value
-        self.progress_ring.visible = True
-        self.create_memory_button.disabled = True
-        self.update()
+        target_date = self.date_picker_button.get_date_string()
+        self.create_memory_button.show_progress()
 
         try:
             success, result = self.memory_creation_manager.create_memory(target_date)
             if success:
-                self.edit_field.value = result
-                self.save_button.disabled = False
+                self.edit_field.set_value(result)
+                self.editing_section.expand()  # Auto-expand editing section
             else:
                 self._show_error(result)
         except Exception as ex:
             self._show_error(f"記憶の生成中にエラーが発生しました: {ex}")
         finally:
-            self.progress_ring.visible = False
-            self.create_memory_button.disabled = False
-            self.update()
+            self.create_memory_button.hide_progress()
 
-    def _on_edit(self, e):
-        self.save_button.disabled = not bool(self.edit_field.value.strip())
-        self.update()
-
-    def _save_memory(self, e):
+    def _save_memory(self, memory_content):
+        """Save memory content. Called by EditableTextField."""
         if not self.memories_dir:
             self._show_error("記憶の保存先ディレクトリが設定されていません。")
             return
 
-        target_date = self.selected_date_text.value
-        memory_content = self.edit_field.value
+        target_date = self.date_picker_button.get_date_string()
 
         if not memory_content.strip():
             self._show_error("保存する内容がありません。")
@@ -198,75 +179,6 @@ class MemoryCreationTab(ft.Container):
 
         except Exception as ex:
             self._show_error(f"記憶の保存中にエラーが発生しました: {ex}")
-
-    def _create_expandable_section(self, section_key, title, icon, content_items):
-        """展開可能セクションを作成"""
-
-        # セクション内容
-        section_content = ft.Column(
-            content_items,
-            spacing=10,
-            visible=self.section_states[section_key]
-        )
-
-        # ヘッダーボタン（クリック可能）
-        header_button = ft.Container(
-            content=ft.Row([
-                ft.Icon(icon, size=16, color=ft.Colors.GREY_700),
-                ft.Text(title, size=12, weight=ft.FontWeight.BOLD, color=ft.Colors.GREY_700),
-                ft.Icon(
-                    ft.Icons.EXPAND_MORE if not self.section_states[section_key] else ft.Icons.EXPAND_LESS,
-                    size=16,
-                    color=ft.Colors.GREY_700
-                )
-            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-            padding=ft.padding.symmetric(horizontal=10, vertical=8),
-            bgcolor=ft.Colors.GREY_100,
-            border_radius=5,
-            on_click=lambda e, key=section_key: self._toggle_section(key),
-            animate=200
-        )
-
-        # アニメーション付きコンテナ（Fletバージョン互換）
-        animated_content = ft.Container(
-            content=section_content,
-            padding=ft.padding.symmetric(horizontal=10, vertical=5) if self.section_states[section_key] else ft.padding.all(0),
-            animate=300
-        )
-
-        return ft.Column([
-            header_button,
-            animated_content
-        ], spacing=0)
-
-    def _toggle_section(self, section_key):
-        """セクションの展開/折りたたみを切り替え"""
-        # 状態を反転
-        self.section_states[section_key] = not self.section_states[section_key]
-
-        # 該当セクションを再作成して更新
-        if section_key == "date_selection":
-            self.date_section = self._create_expandable_section(
-                "date_selection", "日付選択・記憶生成", ft.Icons.CALENDAR_MONTH,
-                [
-                    ft.Row([self.pick_date_button, self.selected_date_text], alignment=ft.MainAxisAlignment.CENTER, spacing=10),
-                    ft.Row([self.create_memory_button, self.save_button, self.progress_ring], alignment=ft.MainAxisAlignment.CENTER, spacing=10)
-                ]
-            )
-            self.content.controls[1].content.controls[0] = self.date_section
-        elif section_key == "memory_editing":
-            self.editing_section = self._create_expandable_section(
-                "memory_editing", "記憶編集", ft.Icons.EDIT, [self.edit_field]
-            )
-            self.content.controls[1].content.controls[1] = self.editing_section
-        elif section_key == "existing_memories":
-            self.existing_section = self._create_expandable_section(
-                "existing_memories", "既存の記憶", ft.Icons.AUTO_STORIES, [self.memories_list]
-            )
-            self.content.controls[1].content.controls[2] = self.existing_section
-
-        # UIを更新
-        self.update()
 
     def _load_existing_memories(self):
         """既存の記憶ファイルを読み込んでリストに表示"""
@@ -322,12 +234,10 @@ class MemoryCreationTab(ft.Container):
                 content = f.read()
 
             # エディタフィールドに内容をロード
-            self.edit_field.value = content
-            self.edit_field.update()
+            self.edit_field.set_value(content)
 
             # 記憶編集セクションを展開
-            if not self.section_states["memory_editing"]:
-                self._toggle_section("memory_editing")
+            self.editing_section.expand()
 
         except Exception as e:
             self._show_error(f"記憶ファイルの読み込みに失敗しました: {e}")
