@@ -26,6 +26,16 @@ class MemoryCreationTab(ft.Container):
         self.memory_creation_manager = memory_creation_manager
         self.memories_dir = memories_dir
 
+        # 展開可能セクションの状態管理
+        self.section_states = {
+            "date_selection": False,
+            "memory_editing": False,
+            "existing_memories": False
+        }
+
+        # 既存記憶ファイルのリスト
+        self.existing_memories = []
+
         # --- UI Controls ---
         self.date_picker = ft.DatePicker(
             first_date=datetime.datetime(2020, 1, 1),
@@ -69,23 +79,62 @@ class MemoryCreationTab(ft.Container):
             disabled=True
         )
 
-        self.content = ft.Column([
-            ft.Container(
-                content=ft.Text("記憶生成ツール", size=14, weight=ft.FontWeight.BOLD),
-                padding=ft.padding.symmetric(horizontal=10, vertical=5),
-                bgcolor=ft.Colors.PURPLE_50,
-                border_radius=5
-            ),
-            ft.Container(
-                content=ft.Column([
-                    ft.Row([self.pick_date_button, self.selected_date_text], alignment=ft.MainAxisAlignment.CENTER, spacing=10),
-                    ft.Row([self.create_memory_button, self.save_button, self.progress_ring], alignment=ft.MainAxisAlignment.CENTER, spacing=10),
-                    self.edit_field,
-                ], spacing=15),
-                padding=ft.padding.all(15),
-                expand=True
-            )
-        ])
+        # 既存記憶リスト表示エリア
+        self.memories_list = ft.Column(
+            scroll=ft.ScrollMode.AUTO,
+            expand=True,
+            controls=[]
+        )
+
+        # 既存記憶ファイルを読み込み
+        self._load_existing_memories()
+
+        # 展開可能セクションを作成
+        self.date_section = self._create_expandable_section(
+            "date_selection",
+            "日付選択・記憶生成",
+            ft.Icons.CALENDAR_MONTH,
+            [
+                ft.Row([self.pick_date_button, self.selected_date_text], alignment=ft.MainAxisAlignment.CENTER, spacing=10),
+                ft.Row([self.create_memory_button, self.save_button, self.progress_ring], alignment=ft.MainAxisAlignment.CENTER, spacing=10)
+            ]
+        )
+
+        self.editing_section = self._create_expandable_section(
+            "memory_editing",
+            "記憶編集",
+            ft.Icons.EDIT,
+            [self.edit_field]
+        )
+
+        self.existing_section = self._create_expandable_section(
+            "existing_memories",
+            "既存の記憶",
+            ft.Icons.AUTO_STORIES,
+            [self.memories_list]
+        )
+
+        self.content = ft.Column(
+            [
+                ft.Container(
+                    content=ft.Text("記憶生成ツール", size=14, weight=ft.FontWeight.BOLD),
+                    padding=ft.padding.symmetric(horizontal=10, vertical=5),
+                    bgcolor=ft.Colors.PURPLE_50,
+                    border_radius=5
+                ),
+                ft.Container(
+                    content=ft.Column([
+                        self.date_section,
+                        self.editing_section,
+                        self.existing_section
+                    ], spacing=5),
+                    padding=ft.padding.all(15),
+                    expand=True
+                )
+            ],
+            scroll=ft.ScrollMode.AUTO,
+            expand=True
+        )
 
     def _on_date_selected(self, e):
         self.selected_date_text.value = self.date_picker.value.strftime("%Y-%m-%d")
@@ -150,6 +199,139 @@ class MemoryCreationTab(ft.Container):
         except Exception as ex:
             self._show_error(f"記憶の保存中にエラーが発生しました: {ex}")
 
+    def _create_expandable_section(self, section_key, title, icon, content_items):
+        """展開可能セクションを作成"""
+
+        # セクション内容
+        section_content = ft.Column(
+            content_items,
+            spacing=10,
+            visible=self.section_states[section_key]
+        )
+
+        # ヘッダーボタン（クリック可能）
+        header_button = ft.Container(
+            content=ft.Row([
+                ft.Icon(icon, size=16, color=ft.Colors.GREY_700),
+                ft.Text(title, size=12, weight=ft.FontWeight.BOLD, color=ft.Colors.GREY_700),
+                ft.Icon(
+                    ft.Icons.EXPAND_MORE if not self.section_states[section_key] else ft.Icons.EXPAND_LESS,
+                    size=16,
+                    color=ft.Colors.GREY_700
+                )
+            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+            padding=ft.padding.symmetric(horizontal=10, vertical=8),
+            bgcolor=ft.Colors.GREY_100,
+            border_radius=5,
+            on_click=lambda e, key=section_key: self._toggle_section(key),
+            animate=200
+        )
+
+        # アニメーション付きコンテナ（Fletバージョン互換）
+        animated_content = ft.Container(
+            content=section_content,
+            padding=ft.padding.symmetric(horizontal=10, vertical=5) if self.section_states[section_key] else ft.padding.all(0),
+            animate=300
+        )
+
+        return ft.Column([
+            header_button,
+            animated_content
+        ], spacing=0)
+
+    def _toggle_section(self, section_key):
+        """セクションの展開/折りたたみを切り替え"""
+        # 状態を反転
+        self.section_states[section_key] = not self.section_states[section_key]
+
+        # 該当セクションを再作成して更新
+        if section_key == "date_selection":
+            self.date_section = self._create_expandable_section(
+                "date_selection", "日付選択・記憶生成", ft.Icons.CALENDAR_MONTH,
+                [
+                    ft.Row([self.pick_date_button, self.selected_date_text], alignment=ft.MainAxisAlignment.CENTER, spacing=10),
+                    ft.Row([self.create_memory_button, self.save_button, self.progress_ring], alignment=ft.MainAxisAlignment.CENTER, spacing=10)
+                ]
+            )
+            self.content.controls[1].content.controls[0] = self.date_section
+        elif section_key == "memory_editing":
+            self.editing_section = self._create_expandable_section(
+                "memory_editing", "記憶編集", ft.Icons.EDIT, [self.edit_field]
+            )
+            self.content.controls[1].content.controls[1] = self.editing_section
+        elif section_key == "existing_memories":
+            self.existing_section = self._create_expandable_section(
+                "existing_memories", "既存の記憶", ft.Icons.AUTO_STORIES, [self.memories_list]
+            )
+            self.content.controls[1].content.controls[2] = self.existing_section
+
+        # UIを更新
+        self.update()
+
+    def _load_existing_memories(self):
+        """既存の記憶ファイルを読み込んでリストに表示"""
+        if not self.memories_dir or not os.path.exists(self.memories_dir):
+            return
+
+        try:
+            # .mdファイルのみを取得
+            memory_files = [f for f in os.listdir(self.memories_dir) if f.endswith('.md') and f.startswith('memory-')]
+            memory_files.sort(reverse=True)  # 最新順
+
+            self.memories_list.controls.clear()
+
+            for file_name in memory_files[:10]:  # 最新10件のみ表示
+                memory_item = self._create_memory_item(file_name)
+                self.memories_list.controls.append(memory_item)
+
+        except Exception as e:
+            print(f"Error loading existing memories: {e}")
+
+    def _create_memory_item(self, file_name):
+        """記憶アイテムのUIコンポーネントを作成"""
+        # ファイル名から日付を抽出 (memory-YY.MM.DD.md)
+        date_part = file_name.replace('memory-', '').replace('.md', '')
+
+        return ft.Container(
+            content=ft.Row([
+                ft.Icon(ft.Icons.AUTO_STORIES, color=ft.Colors.PURPLE, size=16),
+                ft.Column([
+                    ft.Text(f"記憶 {date_part}", size=12, weight=ft.FontWeight.BOLD),
+                    ft.Text(file_name, size=10, color=ft.Colors.GREY_600)
+                ], spacing=2, expand=True),
+                ft.IconButton(
+                    icon=ft.Icons.VISIBILITY,
+                    tooltip="記憶を表示",
+                    icon_size=16,
+                    on_click=lambda e, f=file_name: self._view_memory(f)
+                )
+            ], spacing=5),
+            padding=ft.padding.all(8),
+            margin=ft.margin.symmetric(vertical=2),
+            bgcolor=ft.Colors.WHITE,
+            border=ft.border.all(1, ft.Colors.GREY_200),
+            border_radius=5,
+            animate=200
+        )
+
+    def _view_memory(self, file_name):
+        """記憶ファイルを表示"""
+        try:
+            file_path = os.path.join(self.memories_dir, file_name)
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+
+            # エディタフィールドに内容をロード
+            self.edit_field.value = content
+            self.edit_field.update()
+
+            # 記憶編集セクションを展開
+            if not self.section_states["memory_editing"]:
+                self._toggle_section("memory_editing")
+
+        except Exception as e:
+            self._show_error(f"記憶ファイルの読み込みに失敗しました: {e}")
+
     def _show_error(self, message):
         self.page.snack_bar = ft.SnackBar(content=ft.Text(message), bgcolor=ft.Colors.RED)
         self.page.snack_bar.open = True
@@ -173,6 +355,16 @@ class NippoCreationTab(ft.Container):
         self.nippo_creation_manager = nippo_creation_manager
         self.nippo_dir = nippo_dir
         self.memories_dir = memories_dir
+
+        # 展開可能セクションの状態管理
+        self.section_states = {
+            "date_memory": False,
+            "nippo_generation": False,
+            "existing_nippos": False
+        }
+
+        # 既存日報ファイルのリスト
+        self.existing_nippos = []
 
         # --- UI Controls ---
         self.date_picker = ft.DatePicker(
@@ -234,26 +426,67 @@ class NippoCreationTab(ft.Container):
             disabled=True
         )
 
-        self.content = ft.Column([
-            ft.Container(
-                content=ft.Text("日報生成ツール", size=14, weight=ft.FontWeight.BOLD),
-                padding=ft.padding.symmetric(horizontal=10, vertical=5),
-                bgcolor=ft.Colors.BLUE_50,
-                border_radius=5
-            ),
-            ft.Container(
-                content=ft.Column([
-                    ft.Row([self.pick_date_button, self.selected_date_text], alignment=ft.MainAxisAlignment.CENTER, spacing=10),
-                    self.load_memory_button,
-                    self.memory_field,
-                    ft.Row([self.create_nippo_button, self.progress_ring], alignment=ft.MainAxisAlignment.CENTER, spacing=10),
-                    self.nippo_result_field,
-                    self.save_nippo_button,
-                ], spacing=15),
-                padding=ft.padding.all(15),
-                expand=True
-            )
-        ])
+        # 既存日報リスト表示エリア
+        self.nippos_list = ft.Column(
+            scroll=ft.ScrollMode.AUTO,
+            expand=True,
+            controls=[]
+        )
+
+        # 既存日報ファイルを読み込み
+        self._load_existing_nippos()
+
+        # 展開可能セクションを作成
+        self.date_memory_section = self._create_expandable_section(
+            "date_memory",
+            "日付・記憶選択",
+            ft.Icons.CALENDAR_MONTH,
+            [
+                ft.Row([self.pick_date_button, self.selected_date_text], alignment=ft.MainAxisAlignment.CENTER, spacing=10),
+                self.load_memory_button,
+                self.memory_field
+            ]
+        )
+
+        self.generation_section = self._create_expandable_section(
+            "nippo_generation",
+            "日報生成・編集",
+            ft.Icons.ARTICLE,
+            [
+                ft.Row([self.create_nippo_button, self.progress_ring], alignment=ft.MainAxisAlignment.CENTER, spacing=10),
+                self.nippo_result_field,
+                self.save_nippo_button
+            ]
+        )
+
+        self.existing_section = self._create_expandable_section(
+            "existing_nippos",
+            "既存の日報",
+            ft.Icons.ARTICLE,
+            [self.nippos_list]
+        )
+
+        self.content = ft.Column(
+            [
+                ft.Container(
+                    content=ft.Text("日報生成ツール", size=14, weight=ft.FontWeight.BOLD),
+                    padding=ft.padding.symmetric(horizontal=10, vertical=5),
+                    bgcolor=ft.Colors.BLUE_50,
+                    border_radius=5
+                ),
+                ft.Container(
+                    content=ft.Column([
+                        self.date_memory_section,
+                        self.generation_section,
+                        self.existing_section
+                    ], spacing=5),
+                    padding=ft.padding.all(15),
+                    expand=True
+                )
+            ],
+            scroll=ft.ScrollMode.AUTO,
+            expand=True
+        )
 
     def _on_date_selected(self, e):
         self.selected_date_text.value = self.date_picker.value.strftime("%Y-%m-%d")
@@ -366,6 +599,145 @@ class NippoCreationTab(ft.Container):
         except Exception as ex:
             self._show_error(f"日報の保存中にエラーが発生しました: {ex}")
 
+    def _create_expandable_section(self, section_key, title, icon, content_items):
+        """展開可能セクションを作成"""
+
+        # セクション内容
+        section_content = ft.Column(
+            content_items,
+            spacing=10,
+            visible=self.section_states[section_key]
+        )
+
+        # ヘッダーボタン（クリック可能）
+        header_button = ft.Container(
+            content=ft.Row([
+                ft.Icon(icon, size=16, color=ft.Colors.GREY_700),
+                ft.Text(title, size=12, weight=ft.FontWeight.BOLD, color=ft.Colors.GREY_700),
+                ft.Icon(
+                    ft.Icons.EXPAND_MORE if not self.section_states[section_key] else ft.Icons.EXPAND_LESS,
+                    size=16,
+                    color=ft.Colors.GREY_700
+                )
+            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+            padding=ft.padding.symmetric(horizontal=10, vertical=8),
+            bgcolor=ft.Colors.GREY_100,
+            border_radius=5,
+            on_click=lambda e, key=section_key: self._toggle_section(key),
+            animate=200
+        )
+
+        # アニメーション付きコンテナ（Fletバージョン互換）
+        animated_content = ft.Container(
+            content=section_content,
+            padding=ft.padding.symmetric(horizontal=10, vertical=5) if self.section_states[section_key] else ft.padding.all(0),
+            animate=300
+        )
+
+        return ft.Column([
+            header_button,
+            animated_content
+        ], spacing=0)
+
+    def _toggle_section(self, section_key):
+        """セクションの展開/折りたたみを切り替え"""
+        # 状態を反転
+        self.section_states[section_key] = not self.section_states[section_key]
+
+        # 該当セクションを再作成して更新
+        if section_key == "date_memory":
+            self.date_memory_section = self._create_expandable_section(
+                "date_memory", "日付・記憶選択", ft.Icons.CALENDAR_MONTH,
+                [
+                    ft.Row([self.pick_date_button, self.selected_date_text], alignment=ft.MainAxisAlignment.CENTER, spacing=10),
+                    self.load_memory_button,
+                    self.memory_field
+                ]
+            )
+            self.content.controls[1].content.controls[0] = self.date_memory_section
+        elif section_key == "nippo_generation":
+            self.generation_section = self._create_expandable_section(
+                "nippo_generation", "日報生成・編集", ft.Icons.ARTICLE,
+                [
+                    ft.Row([self.create_nippo_button, self.progress_ring], alignment=ft.MainAxisAlignment.CENTER, spacing=10),
+                    self.nippo_result_field,
+                    self.save_nippo_button
+                ]
+            )
+            self.content.controls[1].content.controls[1] = self.generation_section
+        elif section_key == "existing_nippos":
+            self.existing_section = self._create_expandable_section(
+                "existing_nippos", "既存の日報", ft.Icons.ARTICLE, [self.nippos_list]
+            )
+            self.content.controls[1].content.controls[2] = self.existing_section
+
+        # UIを更新
+        self.update()
+
+    def _load_existing_nippos(self):
+        """既存の日報ファイルを読み込んでリストに表示"""
+        if not self.nippo_dir or not os.path.exists(self.nippo_dir):
+            return
+
+        try:
+            # .mdファイルのみを取得
+            nippo_files = [f for f in os.listdir(self.nippo_dir) if f.endswith('.md') and f.startswith('nippo-')]
+            nippo_files.sort(reverse=True)  # 最新順
+
+            self.nippos_list.controls.clear()
+
+            for file_name in nippo_files[:10]:  # 最新10件のみ表示
+                nippo_item = self._create_nippo_item(file_name)
+                self.nippos_list.controls.append(nippo_item)
+
+        except Exception as e:
+            print(f"Error loading existing nippos: {e}")
+
+    def _create_nippo_item(self, file_name):
+        """日報アイテムのUIコンポーネントを作成"""
+        # ファイル名から日付を抽出 (nippo-YY.MM.DD.md)
+        date_part = file_name.replace('nippo-', '').replace('.md', '')
+
+        return ft.Container(
+            content=ft.Row([
+                ft.Icon(ft.Icons.ARTICLE, color=ft.Colors.BLUE, size=16),
+                ft.Column([
+                    ft.Text(f"日報 {date_part}", size=12, weight=ft.FontWeight.BOLD),
+                    ft.Text(file_name, size=10, color=ft.Colors.GREY_600)
+                ], spacing=2, expand=True),
+                ft.IconButton(
+                    icon=ft.Icons.VISIBILITY,
+                    tooltip="日報を表示",
+                    icon_size=16,
+                    on_click=lambda e, f=file_name: self._view_nippo(f)
+                )
+            ], spacing=5),
+            padding=ft.padding.all(8),
+            margin=ft.margin.symmetric(vertical=2),
+            bgcolor=ft.Colors.WHITE,
+            border=ft.border.all(1, ft.Colors.GREY_200),
+            border_radius=5,
+            animate=200
+        )
+
+    def _view_nippo(self, file_name):
+        """日報ファイルを表示"""
+        try:
+            file_path = os.path.join(self.nippo_dir, file_name)
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+
+            # 日報結果フィールドに内容をロード
+            self.nippo_result_field.value = content
+            self.nippo_result_field.update()
+
+            # 日報生成セクションを展開
+            if not self.section_states["nippo_generation"]:
+                self._toggle_section("nippo_generation")
+
+        except Exception as e:
+            self._show_error(f"日報ファイルの読み込みに失敗しました: {e}")
+
     def _show_error(self, message):
         self.page.snack_bar = ft.SnackBar(content=ft.Text(message), bgcolor=ft.Colors.RED)
         self.page.snack_bar.open = True
@@ -422,33 +794,37 @@ class FileTab(ft.Container):
         self.current_filter = ""
         self.all_files = []  # すべてのファイル情報を保持
 
-        self.content = ft.Column([
-            # ヘッダー
-            ft.Container(
-                content=ft.Row([
-                    ft.Text("プロジェクトファイル", size=14, weight=ft.FontWeight.BOLD),
-                    ft.Row([self.create_file_button, self.refresh_button], spacing=2)
-                ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-                padding=ft.padding.symmetric(horizontal=10, vertical=5),
-                bgcolor=ft.Colors.BLUE_50,
-                border_radius=5
-            ),
+        self.content = ft.Column(
+            [
+                # ヘッダー
+                ft.Container(
+                    content=ft.Row([
+                        ft.Text("プロジェクトファイル", size=14, weight=ft.FontWeight.BOLD),
+                        ft.Row([self.create_file_button, self.refresh_button], spacing=2)
+                    ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                    padding=ft.padding.symmetric(horizontal=10, vertical=5),
+                    bgcolor=ft.Colors.BLUE_50,
+                    border_radius=5
+                ),
 
-            # 検索バー
-            ft.Container(
-                content=self.search_field,
-                padding=ft.padding.all(10)
-            ),
+                # 検索バー
+                ft.Container(
+                    content=self.search_field,
+                    padding=ft.padding.all(10)
+                ),
 
-            # ファイルツリー
-            ft.Container(
-                content=self.file_tree,
-                expand=True,
-                border=ft.border.all(1, ft.Colors.GREY_300),
-                border_radius=5,
-                padding=ft.padding.all(5)
-            )
-        ])
+                # ファイルツリー
+                ft.Container(
+                    content=self.file_tree,
+                    expand=True,
+                    border=ft.border.all(1, ft.Colors.GREY_300),
+                    border_radius=5,
+                    padding=ft.padding.all(5)
+                )
+            ],
+            scroll=ft.ScrollMode.AUTO,
+            expand=True
+        )
 
     def load_files(self, file_list: List[Dict]):
         """ファイルリストを読み込み、ツリー表示を更新"""
@@ -589,23 +965,27 @@ class EditorArea(ft.Container):
             expand=True
         )
 
-        self.content = ft.Column([
-            # ヘッダー
-            ft.Container(
-                content=ft.Text("エディタ", size=14, weight=ft.FontWeight.BOLD),
-                padding=ft.padding.symmetric(horizontal=10, vertical=5),
-                bgcolor=ft.Colors.GREEN_50,
-                border_radius=5
-            ),
+        self.content = ft.Column(
+            [
+                # ヘッダー
+                ft.Container(
+                    content=ft.Text("エディタ", size=14, weight=ft.FontWeight.BOLD),
+                    padding=ft.padding.symmetric(horizontal=10, vertical=5),
+                    bgcolor=ft.Colors.GREEN_50,
+                    border_radius=5
+                ),
 
-            # エディタタブまたは初期表示
-            ft.Container(
-                content=self.welcome_content,
-                expand=True,
-                border=ft.border.all(1, ft.Colors.GREY_300),
-                border_radius=5
-            )
-        ])
+                # エディタタブまたは初期表示
+                ft.Container(
+                    content=self.welcome_content,
+                    expand=True,
+                    border=ft.border.all(1, ft.Colors.GREY_300),
+                    border_radius=5
+                )
+            ],
+            scroll=ft.ScrollMode.AUTO,
+            expand=True
+        )
 
     def open_file(self, file_info: Dict, content: str = ""):
         """ファイルをエディタで開く"""
@@ -761,6 +1141,12 @@ class AutomationAnalysisTab(ft.Container):
         self.available_functions = available_functions or []
         self.on_run_analysis = on_run_analysis
 
+        # 展開可能セクションの状態管理
+        self.section_states = {
+            "function_selection": False,
+            "results": False
+        }
+
         # 分析機能選択
         self.function_dropdown = ft.Dropdown(
             label="分析機能を選択",
@@ -795,27 +1181,106 @@ class AutomationAnalysisTab(ft.Container):
             padding=ft.padding.all(10)
         )
 
-        self.content = ft.Column([
-            # ヘッダー
-            ft.Container(
-                content=ft.Text("AI分析ツール", size=14, weight=ft.FontWeight.BOLD),
-                padding=ft.padding.symmetric(horizontal=10, vertical=5),
-                bgcolor=ft.Colors.ORANGE_50,
-                border_radius=5
-            ),
+        # 展開可能セクションを作成
+        self.function_section = self._create_expandable_section(
+            "function_selection",
+            "分析機能",
+            ft.Icons.SETTINGS,
+            [self.function_dropdown, self.run_button]
+        )
 
-            # 機能選択
-            ft.Container(
-                content=ft.Column([
-                    self.function_dropdown,
-                    self.run_button
-                ]),
-                padding=ft.padding.all(10)
-            ),
+        self.results_section = self._create_expandable_section(
+            "results",
+            "分析結果",
+            ft.Icons.ANALYTICS,
+            [self.result_area]
+        )
 
-            # 結果表示
-            self.result_area
-        ])
+        self.content = ft.Column(
+            [
+                # ヘッダー
+                ft.Container(
+                    content=ft.Text("AI分析ツール", size=14, weight=ft.FontWeight.BOLD),
+                    padding=ft.padding.symmetric(horizontal=10, vertical=5),
+                    bgcolor=ft.Colors.ORANGE_50,
+                    border_radius=5
+                ),
+
+                # 展開可能セクション
+                ft.Container(
+                    content=ft.Column([
+                        self.function_section,
+                        self.results_section
+                    ], spacing=5),
+                    padding=ft.padding.all(15),
+                    expand=True
+                )
+            ],
+            scroll=ft.ScrollMode.AUTO,
+            expand=True
+        )
+
+    def _create_expandable_section(self, section_key, title, icon, content_items):
+        """展開可能セクションを作成"""
+
+        # セクション内容
+        section_content = ft.Column(
+            content_items,
+            spacing=10,
+            visible=self.section_states[section_key]
+        )
+
+        # ヘッダーボタン（クリック可能）
+        header_button = ft.Container(
+            content=ft.Row([
+                ft.Icon(icon, size=16, color=ft.Colors.GREY_700),
+                ft.Text(title, size=12, weight=ft.FontWeight.BOLD, color=ft.Colors.GREY_700),
+                ft.Icon(
+                    ft.Icons.EXPAND_MORE if not self.section_states[section_key] else ft.Icons.EXPAND_LESS,
+                    size=16,
+                    color=ft.Colors.GREY_700
+                )
+            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+            padding=ft.padding.symmetric(horizontal=10, vertical=8),
+            bgcolor=ft.Colors.GREY_100,
+            border_radius=5,
+            on_click=lambda e, key=section_key: self._toggle_section(key),
+            animate=200
+        )
+
+        # アニメーション付きコンテナ（Fletバージョン互換）
+        animated_content = ft.Container(
+            content=section_content,
+            padding=ft.padding.symmetric(horizontal=10, vertical=5) if self.section_states[section_key] else ft.padding.all(0),
+            animate=300
+        )
+
+        return ft.Column([
+            header_button,
+            animated_content
+        ], spacing=0)
+
+    def _toggle_section(self, section_key):
+        """セクションの展開/折りたたみを切り替え"""
+        # 状態を反転
+        self.section_states[section_key] = not self.section_states[section_key]
+
+        # 該当セクションを再作成して更新
+        if section_key == "function_selection":
+            self.function_section = self._create_expandable_section(
+                "function_selection", "分析機能", ft.Icons.SETTINGS,
+                [self.function_dropdown, self.run_button]
+            )
+            self.content.controls[1].content.controls[0] = self.function_section
+        elif section_key == "results":
+            self.results_section = self._create_expandable_section(
+                "results", "分析結果", ft.Icons.ANALYTICS,
+                [self.result_area]
+            )
+            self.content.controls[1].content.controls[1] = self.results_section
+
+        # UIを更新
+        self.update()
 
     def _function_selected(self, e):
         """分析機能が選択された時の処理"""
@@ -859,6 +1324,9 @@ class SettingsTab(ft.Container):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
+        # 現在の設定値を読み込み
+        self._load_current_settings()
+
         # テーマ設定
         self.theme_dropdown = ft.Dropdown(
             label="テーマ",
@@ -886,6 +1354,22 @@ class SettingsTab(ft.Container):
             helper_text="AI機能を使用するにはAPIキーが必要です"
         )
 
+        # Alice会話設定
+        self.history_char_limit_slider = ft.Slider(
+            min=1000,
+            max=10000,
+            divisions=90,  # (10000-1000)/100 = 90 divisions for 100-character steps
+            value=getattr(self, '_initial_char_limit', 4000),
+            label="履歴文字数: {value}",
+            on_change=self._on_history_char_limit_change
+        )
+
+        self.history_char_limit_text = ft.Text(
+            f"履歴文字数: {getattr(self, '_initial_char_limit', 4000)}",
+            size=12,
+            color=ft.Colors.GREY_700
+        )
+
         # 設定保存ボタン
         self.save_settings_button = ft.ElevatedButton(
             text="設定を保存",
@@ -893,40 +1377,249 @@ class SettingsTab(ft.Container):
             on_click=self._save_settings
         )
 
-        self.content = ft.Column([
-            # ヘッダー
-            ft.Container(
-                content=ft.Text("アプリケーション設定", size=14, weight=ft.FontWeight.BOLD),
-                padding=ft.padding.symmetric(horizontal=10, vertical=5),
-                bgcolor=ft.Colors.PURPLE_50,
-                border_radius=5
-            ),
+        # 展開可能セクションの状態管理
+        self.section_states = {
+            "appearance": False,
+            "editor": False,
+            "api": False,
+            "alice": False
+        }
 
-            # 設定項目
-            ft.Container(
-                content=ft.Column([
-                    ft.Text("外観", size=12, weight=ft.FontWeight.BOLD),
-                    self.theme_dropdown,
-                    ft.Divider(),
+        # 展開可能セクションを作成
+        self.appearance_section = self._create_expandable_section(
+            "appearance",
+            "外観",
+            ft.Icons.PALETTE,
+            [self.theme_dropdown]
+        )
 
-                    ft.Text("エディタ", size=12, weight=ft.FontWeight.BOLD),
-                    ft.Text("フォントサイズ"),
-                    self.font_size_slider,
-                    ft.Divider(),
+        self.editor_section = self._create_expandable_section(
+            "editor",
+            "エディタ",
+            ft.Icons.EDIT,
+            [
+                ft.Text("フォントサイズ"),
+                self.font_size_slider
+            ]
+        )
 
-                    ft.Text("API設定", size=12, weight=ft.FontWeight.BOLD),
-                    self.api_key_field,
-                    ft.Divider(),
+        self.api_section = self._create_expandable_section(
+            "api",
+            "API設定",
+            ft.Icons.KEY,
+            [self.api_key_field]
+        )
 
-                    self.save_settings_button
-                ], spacing=10),
-                padding=ft.padding.all(15),
-                expand=True
+        self.alice_section = self._create_expandable_section(
+            "alice",
+            "Aliceとの会話",
+            ft.Icons.CHAT,
+            [
+                ft.Text("会話履歴の文字数"),
+                self.history_char_limit_slider,
+                self.history_char_limit_text
+            ]
+        )
+
+        self.content = ft.Column(
+            [
+                # ヘッダー
+                ft.Container(
+                    content=ft.Text("アプリケーション設定", size=14, weight=ft.FontWeight.BOLD),
+                    padding=ft.padding.symmetric(horizontal=10, vertical=5),
+                    bgcolor=ft.Colors.PURPLE_50,
+                    border_radius=5
+                ),
+
+                # 展開可能セクション
+                ft.Container(
+                    content=ft.Column([
+                        self.appearance_section,
+                        self.editor_section,
+                        self.api_section,
+                        self.alice_section,
+                        ft.Container(
+                            content=self.save_settings_button,
+                            padding=ft.padding.symmetric(vertical=10),
+                            alignment=ft.alignment.center
+                        )
+                    ], spacing=5),
+                    padding=ft.padding.all(15),
+                    expand=True
+                )
+            ],
+            scroll=ft.ScrollMode.AUTO,
+            expand=True
+        )
+
+    def _create_expandable_section(self, section_key, title, icon, content_items):
+        """展開可能セクションを作成"""
+
+        # セクション内容
+        section_content = ft.Column(
+            content_items,
+            spacing=10,
+            visible=self.section_states[section_key]
+        )
+
+        # ヘッダーボタン（クリック可能）
+        header_button = ft.Container(
+            content=ft.Row([
+                ft.Icon(icon, size=16, color=ft.Colors.GREY_700),
+                ft.Text(title, size=12, weight=ft.FontWeight.BOLD, color=ft.Colors.GREY_700),
+                ft.Icon(
+                    ft.Icons.EXPAND_MORE if not self.section_states[section_key] else ft.Icons.EXPAND_LESS,
+                    size=16,
+                    color=ft.Colors.GREY_700
+                )
+            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+            padding=ft.padding.symmetric(horizontal=10, vertical=8),
+            bgcolor=ft.Colors.GREY_100,
+            border_radius=5,
+            on_click=lambda e, key=section_key: self._toggle_section(key),
+            animate=200
+        )
+
+        # アニメーション付きコンテナ（Fletバージョン互換）
+        animated_content = ft.Container(
+            content=section_content,
+            padding=ft.padding.symmetric(horizontal=10, vertical=5) if self.section_states[section_key] else ft.padding.all(0),
+            animate=300
+        )
+
+        return ft.Column([
+            header_button,
+            animated_content
+        ], spacing=0)
+
+    def _toggle_section(self, section_key):
+        """セクションの展開/折りたたみを切り替え"""
+        # 状態を反転
+        self.section_states[section_key] = not self.section_states[section_key]
+
+        # 該当セクションを再作成して更新
+        if section_key == "appearance":
+            self.appearance_section = self._create_expandable_section(
+                "appearance", "外観", ft.Icons.PALETTE, [self.theme_dropdown]
             )
-        ])
+            self.content.controls[1].content.controls[0] = self.appearance_section
+        elif section_key == "editor":
+            self.editor_section = self._create_expandable_section(
+                "editor", "エディタ", ft.Icons.EDIT,
+                [ft.Text("フォントサイズ"), self.font_size_slider]
+            )
+            self.content.controls[1].content.controls[1] = self.editor_section
+        elif section_key == "api":
+            self.api_section = self._create_expandable_section(
+                "api", "API設定", ft.Icons.KEY, [self.api_key_field]
+            )
+            self.content.controls[1].content.controls[2] = self.api_section
+        elif section_key == "alice":
+            self.alice_section = self._create_expandable_section(
+                "alice", "Aliceとの会話", ft.Icons.CHAT,
+                [ft.Text("会話履歴の文字数"), self.history_char_limit_slider, self.history_char_limit_text]
+            )
+            self.content.controls[1].content.controls[3] = self.alice_section
+
+        # UIを更新
+        self.update()
+
+    def _load_current_settings(self):
+        """現在の設定値を読み込み、UIコンポーネントに反映"""
+        try:
+            import sys
+            import os
+
+            # config.py ファイルのパスを直接指定
+            config_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'config')
+            config_file = os.path.join(config_dir, 'config.py')
+
+            # config モジュールを動的にインポート
+            import importlib.util
+            spec = importlib.util.spec_from_file_location("config", config_file)
+            config = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(config)
+
+            # history_char_limit の現在値を取得
+            current_char_limit = config.ALICE_CHAT_CONFIG.get('history_char_limit', 4000)
+
+            # スライダーの値を更新（まだ作成されていない可能性があるので、ここでは保存のみ）
+            self._initial_char_limit = current_char_limit
+
+        except Exception as ex:
+            print(f"設定の読み込み中にエラーが発生しました: {ex}")
+            self._initial_char_limit = 4000
+
+    def _on_history_char_limit_change(self, e):
+        """会話履歴文字数スライダーの値が変更された時の処理"""
+        value = int(e.control.value)
+        self.history_char_limit_text.value = f"履歴文字数: {value}"
+        self.history_char_limit_text.update()
 
     def _save_settings(self, e=None):
         """設定を保存"""
-        # TODO: 実際の設定保存処理
-        # 設定をファイルまたは設定管理システムに保存
-        pass
+        try:
+            import sys
+            import os
+
+            # config.py ファイルのパスを直接指定
+            config_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'config')
+            config_file = os.path.join(config_dir, 'config.py')
+
+            # config モジュールを動的にインポート
+            import importlib.util
+            spec = importlib.util.spec_from_file_location("config", config_file)
+            config = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(config)
+
+            # history_char_limit の値を更新
+            char_limit = int(self.history_char_limit_slider.value)
+            config.ALICE_CHAT_CONFIG['history_char_limit'] = char_limit
+
+            # config.py ファイルを書き換えて永続化
+            self._update_config_file(config_file, char_limit)
+
+            # 成功メッセージを表示
+            if hasattr(self, 'page') and self.page:
+                self.page.snack_bar = ft.SnackBar(
+                    content=ft.Text("設定を保存しました"),
+                    bgcolor=ft.Colors.GREEN
+                )
+                self.page.snack_bar.open = True
+                self.page.update()
+
+        except Exception as ex:
+            # エラーメッセージを表示
+            if hasattr(self, 'page') and self.page:
+                self.page.snack_bar = ft.SnackBar(
+                    content=ft.Text(f"設定の保存中にエラーが発生しました: {ex}"),
+                    bgcolor=ft.Colors.RED
+                )
+                self.page.snack_bar.open = True
+                self.page.update()
+
+    def _update_config_file(self, config_file, char_limit):
+        """config.py ファイルの history_char_limit 値を更新"""
+        try:
+            with open(config_file, 'r', encoding='utf-8') as f:
+                content = f.read()
+
+            # history_char_limit の行を更新
+            import re
+            pattern = r'("history_char_limit":\s*)\d+'
+            replacement = f'"history_char_limit": {char_limit}'
+
+            if re.search(pattern, content):
+                content = re.sub(pattern, replacement, content)
+            else:
+                # 存在しない場合は追加（通常は発生しない）
+                pattern = r'("auto_save_interval":\s*\d+,)'
+                replacement = r'\1\n    "history_char_limit": ' + str(char_limit) + ','
+                content = re.sub(pattern, replacement, content)
+
+            with open(config_file, 'w', encoding='utf-8') as f:
+                f.write(content)
+
+        except Exception as ex:
+            print(f"設定ファイルの更新中にエラーが発生しました: {ex}")
+            raise

@@ -5,6 +5,7 @@ activity logs to files for troubleshooting and monitoring purposes.
 """
 
 import logging
+import logging.handlers
 import os
 import sys
 from datetime import datetime
@@ -39,17 +40,23 @@ class AppLogger:
     
     def _setup_loggers(self):
         """Set up different loggers for different purposes."""
-        
+
         # Common formatter
         formatter = logging.Formatter(
             '%(asctime)s - %(name)s - %(levelname)s - %(funcName)s:%(lineno)d - %(message)s'
         )
-        
-        # Main application logger
+
+        # Main application logger with daily rotation
         self.main_logger = logging.getLogger(f"{self.app_name}.main")
         self.main_logger.setLevel(logging.INFO)
-        
-        main_handler = logging.FileHandler(self.log_files['main'], encoding='utf-8')
+
+        main_handler = logging.handlers.TimedRotatingFileHandler(
+            self.log_files['main'],
+            when='midnight',
+            backupCount=30,  # Keep 30 days of logs
+            encoding='utf-8'
+        )
+        main_handler.suffix = "%Y-%m-%d"
         main_handler.setFormatter(formatter)
         self.main_logger.addHandler(main_handler)
         

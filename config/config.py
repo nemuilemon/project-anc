@@ -80,4 +80,5 @@ ALICE_CHAT_CONFIG = {
     "model": "gemini-2.5-pro",  # デフォルトのGeminiモデル
     "max_history_length": 500,  # 保持する会話履歴の最大件数
     "auto_save_interval": 30,  # 自動保存間隔（秒）
+    "history_char_limit": 2000,  # 過去のログから読み込む文字数制限
 }

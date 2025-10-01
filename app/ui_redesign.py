@@ -215,8 +215,13 @@ class MainConversationArea(ft.Container):
 
     def _clear_chat_history(self, e=None):
         """会話履歴をクリア"""
+        # UIの表示をクリア
         self.chat_history_view.controls.clear()
         self.chat_history_view.update()
+
+        # AliceChatManagerの履歴もクリア
+        if self.alice_chat_manager:
+            self.alice_chat_manager.clear_history()
 
     def _export_chat(self, e=None):
         """会話をエクスポート（将来実装）"""
@@ -285,10 +290,10 @@ class AuxiliaryToolsSidebar(ft.Container):
             memories_dir=memories_dir
         )
 
-        # タブ構成
+        # タブ構成（標準のTabsに戻す）
         self.tabs = ft.Tabs(
             selected_index=0,
-            animation_duration=300,
+            animation_duration=200,
             expand=True,
             tabs=[
                 ft.Tab(

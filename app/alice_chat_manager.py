@@ -7,6 +7,7 @@ with the AI maid 'Alice' using Google Gemini API.
 import os
 import time
 import json
+from datetime import datetime
 from typing import List, Dict, Any, Optional
 from google import genai
 from google.genai import types
@@ -33,6 +34,10 @@ class AliceChatManager:
         self.long_term_memory = ""
         self.history = []
         self.max_history_length = getattr(config, 'ALICE_CHAT_CONFIG', {}).get('max_history_length', 50)
+
+        # Dialog logs directory
+        self.dialog_logs_dir = os.path.join(getattr(config, 'PROJECT_ROOT', '.'), "logs", "dialogs")
+        os.makedirs(self.dialog_logs_dir, exist_ok=True)
 
         # Initialize API client
         self._init_client()
@@ -89,6 +94,69 @@ class AliceChatManager:
             print(f"Failed to load long-term memory: {e}")
             self.long_term_memory = ""
 
+    def _log_dialog(self, request_contents: List[str], response_text: str, error: Optional[str] = None):
+        """Log dialog to a unique file for each API call.
+
+        Args:
+            request_contents: The contents sent to the API
+            response_text: The response from the API
+            error: Error message if the call failed
+        """
+        try:
+            timestamp = datetime.now().strftime("%Y-%m-%d-%H%M%S-%f")[:-3]  # milliseconds precision
+            log_file_path = os.path.join(self.dialog_logs_dir, f"dialog-{timestamp}.json")
+
+            log_data = {
+                "timestamp": datetime.now().isoformat(),
+                "request": {
+                    "contents": request_contents,
+                    "model": getattr(self.config, 'ALICE_CHAT_CONFIG', {}).get('model', 'gemini-2.0-flash-exp')
+                },
+                "response": response_text if not error else None,
+                "error": error
+            }
+
+            with open(log_file_path, 'w', encoding='utf-8') as f:
+                json.dump(log_data, f, ensure_ascii=False, indent=2)
+
+            print(f"Dialog logged to: {log_file_path}")
+
+        except Exception as e:
+            print(f"Failed to log dialog: {e}")
+
+    def _save_to_chat_log(self, user_message: str, alice_response: str):
+        """Save conversation to daily chat log file.
+
+        Args:
+            user_message: The user's message
+            alice_response: Alice's response
+        """
+        try:
+            import sys
+            sys.path.append(os.path.dirname(__file__))
+            from date_utils import get_current_log_date
+
+            # Get today's log date (3AM rule)
+            today = get_current_log_date()
+            chat_logs_dir = getattr(self.config, 'CHAT_LOGS_DIR',
+                                  os.path.join(getattr(self.config, 'PROJECT_ROOT', '.'), "data", "chat_logs"))
+            os.makedirs(chat_logs_dir, exist_ok=True)
+
+            log_file_path = os.path.join(chat_logs_dir, f"{today}.md")
+            timestamp = datetime.now().strftime("%H:%M:%S")
+
+            # Append to today's log file
+            with open(log_file_path, 'a', encoding='utf-8') as f:
+                f.write(f"\n## {timestamp}\n\n")
+                f.write(f"**ご主人様:**\n{user_message}\n\n")
+                f.write(f"**ありす:**\n{alice_response}\n\n")
+                f.write("---\n")
+
+            print(f"Conversation saved to: {log_file_path}")
+
+        except Exception as e:
+            print(f"Failed to save conversation to chat log: {e}")
+
     def send_message(self, user_message: str) -> str:
         """Send a message to Alice and get the response.
 
@@ -137,6 +205,12 @@ class AliceChatManager:
             # Extract response text
             response_text = response.text if hasattr(response, 'text') else str(response)
 
+            # Log the dialog (for debugging/API tracking)
+            self._log_dialog(contents, response_text)
+
+            # Save to daily chat log
+            self._save_to_chat_log(user_message, response_text)
+
             # Add Alice's response to history
             alice_entry = {
                 'role': 'model',
@@ -153,12 +227,20 @@ class AliceChatManager:
         except Exception as e:
             error_message = f"申し訳ございません。エラーが発生しました: {str(e)}"
             print(f"Error in send_message: {e}")
+
+            # Log the error
+            self._log_dialog(contents if 'contents' in locals() else [], "", error=str(e))
+
             return error_message
 
     def _prepare_contents(self) -> List[str]:
         """Prepare conversation contents for the API request.
 
-        今日のチャットログファイルの内容 + 現在のチャットボックスの会話履歴を組み合わせて送信
+        APIに渡す情報は以下の4つ:
+        1. 長期記憶（0-Memory.md）
+        2. 今日の会話履歴（末尾からX文字）
+        3. self.history（現在のセッション）
+        4. 最新のユーザーメッセージ
 
         Returns:
             List[str]: List of message contents
@@ -169,12 +251,13 @@ class AliceChatManager:
         if self.long_term_memory:
             contents.append(f"=== 長期記憶 ===\n{self.long_term_memory}")
 
-        # 2. 今日のチャットログファイルの内容を読み込み
-        today_log_content = self._load_today_chat_log()
+        # 2. 今日のチャットログファイルの内容を読み込み（末尾からX文字）
+        char_limit = getattr(self.config, 'ALICE_CHAT_CONFIG', {}).get('history_char_limit', 4000)
+        today_log_content = self._load_today_chat_log(char_limit)
         if today_log_content:
-            contents.append(f"=== 今日のチャット履歴 ===\n{today_log_content}")
+            contents.append(f"=== 今日の会話履歴 ===\n{today_log_content}")
 
-        # 3. 現在のチャットボックスの会話履歴を追加
+        # 3. 現在のセッション履歴（self.history）
         if self.history:
             chatbox_content = "=== 現在のセッション ===\n"
             for entry in self.history:
@@ -189,8 +272,11 @@ class AliceChatManager:
 
         return contents if contents else ["こんにちは"]
 
-    def _load_today_chat_log(self) -> Optional[str]:
+    def _load_today_chat_log(self, char_limit: Optional[int] = None) -> Optional[str]:
         """今日のチャットログファイルを読み込む
+
+        Args:
+            char_limit (Optional[int]): 読み込む文字数の制限。Noneの場合は全て読み込む
 
         Returns:
             Optional[str]: 今日のチャットログの内容、ファイルが存在しない場合はNone
@@ -217,7 +303,14 @@ class AliceChatManager:
                 content = f.read().strip()
 
             # 内容が空の場合はNoneを返す
-            return content if content else None
+            if not content:
+                return None
+
+            # 文字数制限が指定されている場合は末尾から指定された文字数を取得
+            if char_limit is not None and len(content) > char_limit:
+                content = content[-char_limit:]
+
+            return content
 
         except Exception as e:
             print(f"Error loading today's chat log: {e}")
