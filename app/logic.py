@@ -10,8 +10,9 @@ import config
 from security import sanitize_filename, validate_file_path, safe_file_operation, create_safe_directory, SecurityError
 from async_operations import async_manager, ProgressTracker, run_with_progress
 
-# Import new AI analysis system
-from ai_analysis import AIAnalysisManager, TaggingPlugin, SummarizationPlugin, SentimentCompassPlugin
+# Import new AI analysis system and dynamic plugin manager
+from ai_analysis import AIAnalysisManager
+from plugin_manager import plugin_manager
 
 class AppLogic:
     def __init__(self, db):
@@ -19,21 +20,22 @@ class AppLogic:
         # Define allowed directories for security validation
         self.allowed_dirs = [config.NOTES_DIR, config.ARCHIVE_DIR, config.MEMORIES_DIR]
         
-        # Initialize AI analysis system
+        # Initialize AI analysis system with dynamic plugin loading
         self.ai_manager = AIAnalysisManager()
         self._setup_ai_plugins()
-        
+
         self.sync_database()
-    
+
     def _setup_ai_plugins(self):
-        """Initialize and register AI analysis plugins."""
+        """Initialize and register AI analysis plugins dynamically."""
         try:
-            # Register core analysis plugins
-            self.ai_manager.register_plugin(TaggingPlugin())
-            self.ai_manager.register_plugin(SummarizationPlugin())
-            self.ai_manager.register_plugin(SentimentCompassPlugin())
-            
-            print(f"Registered {len(self.ai_manager.get_available_plugins())} AI analysis plugins")
+            # Load plugins dynamically from plugin_manager
+            for plugin_name in plugin_manager.get_plugin_names():
+                plugin = plugin_manager.get_plugin(plugin_name)
+                if plugin:
+                    self.ai_manager.register_plugin(plugin)
+
+            print(f"Registered {len(self.ai_manager.get_available_plugins())} AI analysis plugins (dynamically loaded)")
         except Exception as e:
             print(f"Error setting up AI plugins: {e}")
 
