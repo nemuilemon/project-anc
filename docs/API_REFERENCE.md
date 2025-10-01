@@ -1,357 +1,438 @@
-# AI Analysis System - API Reference
+# API Reference
+
+**Version:** 3.0.0
+**Last Updated:** October 1, 2025
 
 ## Table of Contents
 
-1. [Core Classes](#core-classes)
-2. [Plugin Interface](#plugin-interface)
-3. [Manager Interface](#manager-interface)
-4. [Data Structures](#data-structures)
-5. [Integration Layer](#integration-layer)
-6. [Error Handling](#error-handling)
-7. [Examples](#examples)
+1. [AppState](#appstate)
+2. [PluginManager](#pluginmanager)
+3. [AliceChatManager](#alicechatmanager)
+4. [AsyncOperationManager](#asyncoperationmanager)
+5. [AppLogic](#applogic)
+6. [BaseAnalysisPlugin](#baseanalysisplugin)
+7. [AIAnalysisManager](#aianalysismanager)
+8. [UI Components](#ui-components)
 
-## Core Classes
+---
 
-### BaseAnalysisPlugin
+## AppState
 
-Abstract base class that defines the interface all AI analysis plugins must implement.
+**File:** `app/state_manager.py`
 
-#### Constructor
+Centralized application state management with Observer pattern for reactive UI updates.
+
+### Constructor
 
 ```python
-def __init__(self, name: str, description: str, version: str = "1.0.0")
+AppState()
+```
+
+Creates a new application state instance with thread-safe operations.
+
+### File State Methods
+
+#### `add_file(path: str, metadata: dict) -> None`
+Add a file to the state.
+
+**Parameters:**
+- `path` (str): File path
+- `metadata` (dict): File metadata (name, type, size, etc.)
+
+**Example:**
+```python
+app_state.add_file("notes/test.txt", {
+    "name": "test.txt",
+    "type": "text",
+    "size": 1024
+})
+```
+
+#### `remove_file(path: str) -> None`
+Remove a file from the state.
+
+#### `update_file_state(path: str, updates: dict) -> None`
+Update file state with partial updates.
+
+**Example:**
+```python
+app_state.update_file_state("notes/test.txt", {
+    "modified": True,
+    "tags": ["important", "work"]
+})
+```
+
+#### `get_file_state(path: str) -> dict`
+Get current state for a file.
+
+**Returns:** File state dictionary or empty dict if not found.
+
+#### `get_all_files() -> dict`
+Get all files in state.
+
+**Returns:** Dictionary mapping file paths to state.
+
+#### `mark_file_modified(path: str, modified: bool = True) -> None`
+Mark file as modified/unmodified.
+
+#### `set_active_file(path: str) -> None`
+Set the currently active file.
+
+#### `get_active_file() -> Optional[str]`
+Get the currently active file path.
+
+### Conversation State Methods
+
+#### `add_conversation_message(role: str, content: str) -> None`
+Add a message to the conversation history.
+
+**Parameters:**
+- `role` (str): "user" or "assistant"
+- `content` (str): Message content
+
+**Example:**
+```python
+app_state.add_conversation_message("user", "Hello Alice")
+app_state.add_conversation_message("assistant", "Hello! How can I help?")
+```
+
+#### `get_conversation_history() -> list`
+Get all conversation messages.
+
+**Returns:** List of `{"role": str, "content": str, "timestamp": float}` dicts.
+
+#### `clear_conversation_history() -> None`
+Clear all conversation history.
+
+### Observer Pattern
+
+#### `add_observer(event_type: str, callback: callable) -> None`
+Register an observer for state changes.
+
+**Parameters:**
+- `event_type` (str): Event type to observe
+  - `"file_added"`
+  - `"file_removed"`
+  - `"file_updated"`
+  - `"file_modified"`
+  - `"conversation_updated"`
+  - `"ui_updated"`
+- `callback` (callable): Function to call on event
+
+**Example:**
+```python
+def on_file_added(path, state):
+    print(f"File added: {path}")
+
+app_state.add_observer("file_added", on_file_added)
+```
+
+#### `remove_observer(event_type: str, callback: callable) -> None`
+Unregister an observer.
+
+---
+
+## PluginManager
+
+**File:** `app/plugin_manager.py`
+
+Dynamic plugin discovery and loading system.
+
+### Constructor
+
+```python
+PluginManager()
+```
+
+Creates a plugin manager that scans `app/ai_analysis/plugins/` for plugins.
+
+### Methods
+
+#### `discover_plugins() -> Dict[str, Type[BaseAnalysisPlugin]]`
+Discover all plugins in plugins directory.
+
+**Returns:** Dictionary mapping plugin names to plugin classes.
+
+**Example:**
+```python
+plugins = plugin_manager.discover_plugins()
+# {'tagging': TaggingPlugin, 'summarization': SummarizationPlugin, ...}
+```
+
+#### `get_available_plugins() -> Dict[str, Type[BaseAnalysisPlugin]]`
+Get all discovered plugins.
+
+**Returns:** Same as `discover_plugins()`.
+
+#### `get_plugin_info(plugin_name: str) -> Dict[str, Any]`
+Get detailed information about a specific plugin.
+
+**Returns:**
+```python
+{
+    'name': 'tagging',
+    'description': 'Extract tags from content',
+    'version': '1.0.0',
+    'file': 'tagging_plugin.py',
+    'requires_ollama': True
+}
+```
+
+#### `reload_plugins() -> int`
+Reload all plugins (for future hot-reload support).
+
+**Returns:** Number of plugins discovered.
+
+---
+
+## AliceChatManager
+
+**File:** `app/alice_chat_manager.py`
+
+Manages Alice AI chat conversations with Google Gemini.
+
+### Constructor
+
+```python
+AliceChatManager(app_state: AppState)
 ```
 
 **Parameters:**
-- `name` (str): Unique identifier for the plugin
-- `description` (str): Human-readable description of plugin functionality
-- `version` (str): Plugin version string (default: "1.0.0")
+- `app_state` (AppState): Application state instance
 
-#### Properties
+### Methods
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `name` | str | Unique plugin identifier |
-| `description` | str | Human-readable description |
-| `version` | str | Plugin version |
-| `requires_ollama` | bool | Whether plugin requires Ollama connection |
-| `max_retries` | int | Maximum retry attempts (default: 3) |
-| `timeout_seconds` | int | Operation timeout in seconds (default: 60) |
-
-#### Abstract Methods
-
-##### analyze(content: str, **kwargs) -> AnalysisResult
-
-Perform synchronous analysis on the given content.
+#### `send_message(user_message: str) -> str`
+Send a message to Alice and get response.
 
 **Parameters:**
-- `content` (str): Text content to analyze
-- `**kwargs`: Additional plugin-specific parameters
+- `user_message` (str): User's message
 
-**Returns:**
-- `AnalysisResult`: Analysis results or error information
+**Returns:** Alice's response text
 
-**Raises:**
-- `NotImplementedError`: If not implemented by subclass
+**Raises:** `Exception` if API call fails
 
-##### analyze_async(content: str, progress_callback=None, cancel_event=None, **kwargs) -> AnalysisResult
-
-Perform asynchronous analysis with progress tracking and cancellation support.
-
-**Parameters:**
-- `content` (str): Text content to analyze
-- `progress_callback` (Callable[[int], None], optional): Function to call with progress updates (0-100)
-- `cancel_event` (threading.Event, optional): Event for cancellation support
-- `**kwargs`: Additional plugin-specific parameters
-
-**Returns:**
-- `AnalysisResult`: Analysis results or error information
-
-#### Helper Methods
-
-##### validate_content(content: str) -> bool
-
-Validate that content is suitable for this analysis type.
-
-**Parameters:**
-- `content` (str): Content to validate
-
-**Returns:**
-- `bool`: True if content is valid for analysis
-
-##### get_config() -> Dict[str, Any]
-
-Get plugin configuration parameters.
-
-**Returns:**
-- `Dict[str, Any]`: Configuration dictionary with plugin settings
-
-#### Protected Methods
-
-##### _create_success_result(data: Dict[str, Any], message: str, processing_time: float = 0.0) -> AnalysisResult
-
-Create a standardized success result.
-
-**Parameters:**
-- `data` (Dict[str, Any]): Analysis results
-- `message` (str): Success message
-- `processing_time` (float): Time taken for analysis
-
-**Returns:**
-- `AnalysisResult`: Success result object
-
-##### _create_error_result(message: str, error: Optional[Exception] = None) -> AnalysisResult
-
-Create a standardized error result.
-
-**Parameters:**
-- `message` (str): Error message for the user
-- `error` (Exception, optional): Original exception for debugging
-
-**Returns:**
-- `AnalysisResult`: Error result object
-
-##### _check_cancellation(cancel_event: Optional[Event]) -> bool
-
-Check if operation should be cancelled.
-
-**Parameters:**
-- `cancel_event` (Event, optional): Cancellation event
-
-**Returns:**
-- `bool`: True if operation should be cancelled
-
-##### _update_progress(progress_callback: Optional[Callable[[int], None]], progress: int)
-
-Update progress if callback is provided.
-
-**Parameters:**
-- `progress_callback` (Callable, optional): Progress update function
-- `progress` (int): Progress percentage (0-100)
-
-## Plugin Interface
-
-### TaggingPlugin
-
-AI-powered tagging analysis plugin for extracting relevant tags and keywords.
-
-#### Constructor
-
+**Example:**
 ```python
-def __init__(self)
+response = alice_chat_manager.send_message("Hello Alice")
+print(response)  # "Hello! How can I help you today?"
 ```
 
-#### Properties
+#### `load_system_instruction() -> str`
+Load system instruction from `data/notes/0-System-Prompt.md`.
 
-- `name`: "tagging"
-- `description`: "Extract relevant tags and keywords from content using AI"
-- `max_tags_length`: 100 (maximum allowed response length)
+**Returns:** System instruction text or default if file not found.
 
-#### Methods
+#### `load_long_term_memory() -> str`
+Load long-term memory from `data/notes/0-Memory.md`.
 
-##### analyze(content: str, **kwargs) -> AnalysisResult
+**Returns:** Memory text or empty string if file not found.
 
-Extract tags from content using Ollama AI.
+#### `load_todays_chat_log() -> str`
+Load today's chat log from `data/chat_logs/YYYY-MM-DD.md`.
 
-**Returns AnalysisResult with:**
-- `data.tags` (List[str]): List of extracted tags
-- Message indicating number of tags extracted
+**Returns:** Today's chat history or empty string.
 
-##### analyze_async(content: str, progress_callback=None, cancel_event=None, **kwargs) -> AnalysisResult
+#### `save_to_daily_log(user_message: str, assistant_response: str) -> None`
+Save conversation to daily log file.
 
-Asynchronous tag extraction with progress tracking.
+---
 
-##### validate_content(content: str) -> bool
+## AsyncOperationManager
 
-Validates content is at least 10 characters long.
+**File:** `app/async_operations.py`
 
-### SummarizationPlugin
+Manages asynchronous operations with progress tracking and cancellation.
 
-AI-powered content summarization plugin.
-
-#### Constructor
+### Constructor
 
 ```python
-def __init__(self)
+AsyncOperationManager()
 ```
 
-#### Properties
+### Methods
 
-- `name`: "summarization"
-- `description`: "Generate concise summaries of content using AI"
-- `max_summary_length`: 500 (maximum characters for summary)
-- `min_content_length`: 100 (minimum content length to summarize)
-
-#### Methods
-
-##### analyze(content: str, **kwargs) -> AnalysisResult
-
-Generate summary of content.
+#### `run_async_operation(operation_func: callable, *args, **kwargs) -> str`
+Execute an operation asynchronously with tracking.
 
 **Parameters:**
-- `summary_type` (str): "brief", "detailed", or "bullet" (default: "brief")
-- `max_sentences` (int): Maximum sentences in summary (default: 3)
+- `operation_func` (callable): Function to execute
+- `*args`, `**kwargs`: Arguments to pass to function
 
-**Returns AnalysisResult with:**
-- `data.summary` (str): Generated summary
-- `data.summary_type` (str): Type of summary generated
-- `data.original_length` (int): Length of original content
-- `data.summary_length` (int): Length of generated summary
-- `data.compression_ratio` (float): Ratio of summary to original length
+**Returns:** Operation ID (string)
 
-##### validate_content(content: str) -> bool
+**Example:**
+```python
+def long_task(data, progress_callback=None):
+    # Long-running operation
+    if progress_callback:
+        progress_callback(0.5, "Processing...")
+    return result
 
-Validates content is at least 100 characters long.
+op_id = async_mgr.run_async_operation(long_task, data="test")
+```
 
-### SentimentPlugin
+#### `get_operation_status(operation_id: str) -> OperationStatus`
+Get current status of an operation.
 
-AI-powered sentiment analysis plugin.
+**Returns:** `OperationStatus` enum value:
+- `PENDING`
+- `RUNNING`
+- `COMPLETED`
+- `FAILED`
+- `CANCELLED`
 
-#### Constructor
+#### `cancel_operation(operation_id: str) -> bool`
+Cancel a running operation.
+
+**Returns:** `True` if cancellation initiated, `False` otherwise.
+
+#### `get_operation_progress(operation_id: str) -> Tuple[float, str]`
+Get operation progress.
+
+**Returns:** Tuple of (progress_percent, status_message)
+
+**Example:**
+```python
+progress, message = async_mgr.get_operation_progress(op_id)
+print(f"{progress*100:.0f}%: {message}")
+```
+
+---
+
+## AppLogic
+
+**File:** `app/logic.py`
+
+Business logic layer for file operations and AI analysis.
+
+### Constructor
 
 ```python
-def __init__(self)
+AppLogic(app_state: AppState)
 ```
 
-#### Properties
+### File Operations
 
-- `name`: "sentiment"
-- `description`: "Analyze emotional tone and sentiment of content using AI"
-- `min_content_length`: 20 (minimum content length for meaningful analysis)
-
-#### Methods
-
-##### analyze(content: str, **kwargs) -> AnalysisResult
-
-Analyze sentiment of content.
+#### `list_files(category: str = "notes") -> list`
+List all files in a category.
 
 **Parameters:**
-- `analysis_type` (str): "basic", "detailed", or "emotional" (default: "basic")
-- `language` (str): Content language hint (default: "japanese")
+- `category` (str): File category ("notes", "memories", "nippo")
 
-**Returns AnalysisResult with:**
-- `data.overall_sentiment` (str): Overall sentiment classification
-- `data.emotions_detected` (List[str]): List of detected emotions
-- `data.intensity` (str): Emotional intensity level
-- `data.raw_analysis` (str): Raw AI response
-- `data.analysis_type` (str): Type of analysis performed
+**Returns:** List of file metadata dictionaries.
 
-##### validate_content(content: str) -> bool
+#### `open_file(path: str) -> str`
+Open and read a file.
 
-Validates content is at least 20 characters long.
+**Returns:** File content as string.
 
-## Manager Interface
+**Raises:** `FileNotFoundError` if file doesn't exist.
 
-### AIAnalysisManager
+#### `save_file(path: str, content: str) -> bool`
+Save content to a file.
 
-Central management system for AI analysis plugins.
+**Returns:** `True` on success, `False` on failure.
 
-#### Constructor
+#### `delete_file(path: str) -> bool`
+Delete a file.
 
-```python
-def __init__(self)
-```
+**Returns:** `True` on success, `False` on failure.
 
-#### Properties
+### AI Analysis
 
-- `plugins` (Dict[str, BaseAnalysisPlugin]): Dictionary of registered plugins
-- `logger` (logging.Logger): Logger for operation tracking
-
-#### Methods
-
-##### register_plugin(plugin: BaseAnalysisPlugin) -> bool
-
-Register a new analysis plugin.
-
-**Parameters:**
-- `plugin` (BaseAnalysisPlugin): Plugin instance to register
-
-**Returns:**
-- `bool`: True if registration successful, False if plugin name conflicts
-
-##### unregister_plugin(plugin_name: str) -> bool
-
-Unregister an analysis plugin.
-
-**Parameters:**
-- `plugin_name` (str): Name of plugin to unregister
-
-**Returns:**
-- `bool`: True if unregistration successful
-
-##### get_available_plugins() -> List[str]
-
-Get list of available plugin names.
-
-**Returns:**
-- `List[str]`: Names of all registered plugins
-
-##### get_plugin_info(plugin_name: str) -> Optional[Dict[str, Any]]
-
-Get information about a specific plugin.
-
-**Parameters:**
-- `plugin_name` (str): Name of the plugin
-
-**Returns:**
-- `Optional[Dict[str, Any]]`: Plugin configuration or None if not found
-
-##### analyze(content: str, plugin_name: str, **kwargs) -> AnalysisResult
-
-Run synchronous analysis using specified plugin.
+#### `run_ai_analysis(content: str, analysis_type: str, **kwargs) -> dict`
+Run AI analysis on content.
 
 **Parameters:**
 - `content` (str): Content to analyze
-- `plugin_name` (str): Name of plugin to use
-- `**kwargs`: Additional plugin-specific parameters
+- `analysis_type` (str): Plugin name ("tagging", "summarization", etc.)
+- `**kwargs`: Plugin-specific parameters
 
-**Returns:**
-- `AnalysisResult`: Analysis results or error
+**Returns:** Analysis result dictionary:
+```python
+{
+    'success': True,
+    'data': {...},
+    'message': 'Analysis completed',
+    'processing_time': 1.23,
+    'plugin_name': 'tagging'
+}
+```
 
-##### analyze_async(content: str, plugin_name: str, progress_callback=None, cancel_event=None, **kwargs) -> AnalysisResult
+**Example:**
+```python
+result = app_logic.run_ai_analysis(
+    content="Sample text",
+    analysis_type="summarization",
+    summary_type="brief",
+    max_sentences=3
+)
+```
 
-Run asynchronous analysis using specified plugin.
+#### `get_available_plugins() -> List[Dict[str, Any]]`
+Get list of all available AI analysis plugins.
+
+**Returns:** List of plugin metadata dictionaries.
+
+#### `run_ai_analysis_async(path: str, content: str, analysis_type: str, **kwargs) -> str`
+Run async AI analysis and store results.
+
+**Returns:** Operation ID.
+
+---
+
+## BaseAnalysisPlugin
+
+**File:** `app/ai_analysis/base_plugin.py`
+
+Abstract base class for all analysis plugins.
+
+### Constructor
+
+```python
+BaseAnalysisPlugin(name: str, description: str, version: str)
+```
 
 **Parameters:**
-- `content` (str): Content to analyze
-- `plugin_name` (str): Name of plugin to use
-- `progress_callback` (Callable, optional): Progress update function
-- `cancel_event` (Event, optional): Cancellation event
-- `**kwargs`: Additional plugin-specific parameters
+- `name` (str): Unique plugin identifier
+- `description` (str): Human-readable description
+- `version` (str): Semantic version (e.g., "1.0.0")
 
-**Returns:**
-- `AnalysisResult`: Analysis results or error
+### Abstract Methods (Must Implement)
 
-##### analyze_multiple(content: str, plugin_names: List[str], parallel: bool = False, **kwargs) -> Dict[str, AnalysisResult]
+#### `analyze(content: str, **kwargs) -> AnalysisResult`
+Perform synchronous analysis.
 
-Run analysis using multiple plugins.
+**Must be implemented by subclasses.**
 
-**Parameters:**
-- `content` (str): Content to analyze
-- `plugin_names` (List[str]): Names of plugins to use
-- `parallel` (bool): Whether to run plugins in parallel (not implemented yet)
-- `**kwargs`: Additional plugin-specific parameters
+#### `analyze_async(content: str, progress_callback=None, cancel_event=None, **kwargs) -> AnalysisResult`
+Perform asynchronous analysis with progress tracking.
 
-**Returns:**
-- `Dict[str, AnalysisResult]`: Results from each plugin
+**Must be implemented by subclasses.**
 
-##### get_analysis_summary(results: Dict[str, AnalysisResult]) -> Dict[str, Any]
+### Optional Methods
 
-Generate summary of analysis results from multiple plugins.
+#### `validate_content(content: str) -> bool`
+Validate content before analysis.
 
-**Parameters:**
-- `results` (Dict[str, AnalysisResult]): Results from multiple plugins
+**Default:** Returns `True` for non-empty content.
 
-**Returns:**
-- `Dict[str, Any]`: Summary information including success rates and timing
+#### `get_config() -> Dict[str, Any]`
+Get plugin configuration.
 
-## Data Structures
+**Default:** Returns basic config dict.
 
-### AnalysisResult
+### Properties
 
-Data structure for AI analysis results.
+- `name` (str): Plugin name
+- `description` (str): Plugin description
+- `version` (str): Plugin version
+- `requires_ollama` (bool): Whether plugin needs Ollama
+- `max_retries` (int): Maximum retry attempts
+- `timeout_seconds` (int): Operation timeout
 
-#### Constructor
+### AnalysisResult Class
 
 ```python
 @dataclass
@@ -359,244 +440,253 @@ class AnalysisResult:
     success: bool
     data: Dict[str, Any]
     message: str
-    processing_time: float = 0.0
-    plugin_name: str = ""
-    metadata: Dict[str, Any] = None
+    processing_time: float
+    plugin_name: str
+    metadata: Dict[str, Any] = field(default_factory=dict)
 ```
 
-#### Attributes
+---
 
-| Attribute | Type | Description |
-|-----------|------|-------------|
-| `success` | bool | Whether the analysis completed successfully |
-| `data` | Dict[str, Any] | Analysis results (tags, summary, sentiment, etc.) |
-| `message` | str | Human-readable status/error message |
-| `processing_time` | float | Time taken for analysis in seconds |
-| `plugin_name` | str | Name of the plugin that performed the analysis |
-| `metadata` | Dict[str, Any] | Additional metadata about the analysis |
+## AIAnalysisManager
 
-## Integration Layer
+**File:** `app/ai_analysis/manager.py`
 
-### AppLogic Integration
+Central management for AI analysis plugins.
 
-The AI analysis system is integrated into the existing AppLogic class.
-
-#### New Methods
-
-##### run_ai_analysis(content: str, analysis_type: str, **kwargs) -> dict
-
-Run AI analysis using the new modular system.
-
-**Parameters:**
-- `content` (str): Text content to analyze
-- `analysis_type` (str): Type of analysis ("tagging", "summarization", "sentiment")
-- `**kwargs`: Analysis-type specific parameters
-
-**Returns:**
-- `dict`: Analysis result dictionary with keys: success, data, message, processing_time, plugin_name, metadata
-
-##### get_available_ai_functions() -> list
-
-Get list of available AI analysis functions.
-
-**Returns:**
-- `list`: List of plugin information dictionaries
-
-##### run_ai_analysis_async(path: str, content: str, analysis_type: str, **kwargs) -> str
-
-Run AI analysis asynchronously and store results in database.
-
-**Parameters:**
-- `path` (str): File path for database storage
-- `content` (str): Text content to analyze
-- `analysis_type` (str): Type of analysis to perform
-- `**kwargs`: Analysis-type specific parameters including callbacks
-
-**Returns:**
-- `str`: Operation ID for async operation tracking
-
-#### Modified Methods
-
-##### analyze_and_update_tags(path, content, cancel_event=None) -> Tuple[bool, str]
-
-Updated to use new AI analysis system internally while maintaining API compatibility.
-
-##### analyze_and_update_tags_async(path: str, content: str, **kwargs) -> str
-
-Updated to use new AI analysis system internally while maintaining API compatibility.
-
-## Error Handling
-
-### Exception Types
-
-The system uses standard Python exceptions with specific handling:
-
-- `ValueError`: Invalid input parameters
-- `RuntimeError`: Plugin execution errors
-- `ConnectionError`: Ollama connection issues
-- `TimeoutError`: Operation timeout
-- `SecurityError`: Security validation failures
-
-### Error Result Structure
-
-Error results follow a consistent structure:
+### Constructor
 
 ```python
-AnalysisResult(
-    success=False,
-    data={},
-    message="User-friendly error message",
-    plugin_name="plugin_name",
-    metadata={
-        "error_type": "ExceptionType",
-        "error_details": "Detailed error information"
-    }
+AIAnalysisManager()
+```
+
+### Methods
+
+#### `register_plugin(plugin: BaseAnalysisPlugin) -> bool`
+Register a plugin with the manager.
+
+**Returns:** `True` on success.
+
+#### `analyze(content: str, plugin_name: str, **kwargs) -> AnalysisResult`
+Run synchronous analysis.
+
+**Raises:** `ValueError` if plugin not found.
+
+#### `analyze_async(content: str, plugin_name: str, progress_callback=None, cancel_event=None, **kwargs) -> AnalysisResult`
+Run asynchronous analysis.
+
+#### `analyze_multiple(content: str, plugin_names: List[str], **kwargs) -> Dict[str, AnalysisResult]`
+Run multiple analyses in parallel.
+
+**Returns:** Dictionary mapping plugin names to results.
+
+**Example:**
+```python
+results = ai_manager.analyze_multiple(
+    content="Sample text",
+    plugin_names=["tagging", "summarization", "sentiment_compass"]
 )
-```
-
-## Examples
-
-### Basic Usage
-
-```python
-from ai_analysis import AIAnalysisManager, TaggingPlugin
-
-# Initialize manager and register plugins
-manager = AIAnalysisManager()
-manager.register_plugin(TaggingPlugin())
-
-# Run analysis
-content = "This is a document about Python programming and machine learning."
-result = manager.analyze(content, "tagging")
-
-if result.success:
-    tags = result.data["tags"]
-    print(f"Extracted tags: {tags}")
-else:
-    print(f"Analysis failed: {result.message}")
-```
-
-### Asynchronous Analysis with Progress
-
-```python
-from threading import Event
-
-def progress_callback(progress):
-    print(f"Progress: {progress}%")
-
-def completion_callback(result):
-    if result.success:
-        print(f"Analysis completed: {result.message}")
-    else:
-        print(f"Analysis failed: {result.message}")
-
-cancel_event = Event()
-
-# Run async analysis
-manager.analyze_async(
-    content,
-    "summarization",
-    progress_callback=progress_callback,
-    summary_type="detailed",
-    max_sentences=5
-)
-```
-
-### Multiple Analysis Types
-
-```python
-# Run multiple analysis types
-plugins = ["tagging", "summarization", "sentiment"]
-results = manager.analyze_multiple(content, plugins)
 
 for plugin_name, result in results.items():
-    if result.success:
-        print(f"{plugin_name}: {result.message}")
-    else:
-        print(f"{plugin_name} failed: {result.message}")
-
-# Get summary
-summary = manager.get_analysis_summary(results)
-print(f"Success rate: {summary['success_rate']:.1%}")
+    print(f"{plugin_name}: {result.message}")
 ```
 
-### Integration with AppLogic
+#### `get_available_plugins() -> List[str]`
+Get list of registered plugin names.
+
+---
+
+## UI Components
+
+**File:** `app/ui_components.py`
+
+Reusable UI component library.
+
+### DatePickerButton
+
+Date picker with button component.
 
 ```python
-from logic import AppLogic
-from tinydb import TinyDB
-
-# Initialize application
-db = TinyDB('test.json')
-app_logic = AppLogic(db)
-
-# Get available functions
-functions = app_logic.get_available_ai_functions()
-print("Available AI functions:")
-for func in functions:
-    print(f"- {func['name']}: {func['description']}")
-
-# Run analysis
-result = app_logic.run_ai_analysis(content, "sentiment", analysis_type="detailed")
-if result["success"]:
-    sentiment = result["data"]["overall_sentiment"]
-    print(f"Content sentiment: {sentiment}")
+DatePickerButton(
+    label: str = "日付選択",
+    initial_date: Optional[datetime] = None,
+    on_date_change: Optional[Callable] = None
+)
 ```
 
-### Custom Plugin Development
+**Methods:**
+- `get_selected_date() -> datetime`
+- `get_date_string(format: str = "%Y-%m-%d") -> str`
+
+### ProgressButton
+
+Button with integrated progress ring.
 
 ```python
-from ai_analysis.base_plugin import BaseAnalysisPlugin, AnalysisResult
-import time
-
-class ReadabilityPlugin(BaseAnalysisPlugin):
-    def __init__(self):
-        super().__init__(
-            name="readability",
-            description="Analyze content readability and complexity",
-            version="1.0.0"
-        )
-    
-    def analyze(self, content: str, **kwargs) -> AnalysisResult:
-        start_time = time.time()
-        
-        # Simple readability analysis
-        words = len(content.split())
-        sentences = content.count('.') + content.count('!') + content.count('?')
-        avg_words_per_sentence = words / max(sentences, 1)
-        
-        if avg_words_per_sentence < 15:
-            level = "Easy"
-        elif avg_words_per_sentence < 20:
-            level = "Medium"
-        else:
-            level = "Hard"
-        
-        processing_time = time.time() - start_time
-        
-        return self._create_success_result(
-            data={
-                "readability_level": level,
-                "word_count": words,
-                "sentence_count": sentences,
-                "avg_words_per_sentence": round(avg_words_per_sentence, 1)
-            },
-            message=f"Readability analysis completed: {level} level",
-            processing_time=processing_time
-        )
-    
-    def analyze_async(self, content: str, progress_callback=None, cancel_event=None, **kwargs) -> AnalysisResult:
-        if progress_callback:
-            progress_callback(50)
-        
-        result = self.analyze(content, **kwargs)
-        
-        if progress_callback:
-            progress_callback(100)
-        
-        return result
-
-# Register and use custom plugin
-manager.register_plugin(ReadabilityPlugin())
-result = manager.analyze(content, "readability")
+ProgressButton(
+    text: str,
+    icon: Optional[str] = None,
+    on_click: Optional[Callable] = None,
+    button_style: Optional[ft.ButtonStyle] = None
+)
 ```
+
+**Methods:**
+- `show_progress()`: Show progress indicator
+- `hide_progress()`: Hide progress indicator
+
+### ExpandableSection
+
+Expandable/collapsible section.
+
+```python
+ExpandableSection(
+    title: str,
+    icon: str,
+    content_items: List[ft.Control],
+    initial_expanded: bool = False
+)
+```
+
+**Methods:**
+- `expand()`: Expand the section
+- `collapse()`: Collapse the section
+
+### EditableTextField
+
+Multiline text field with save button.
+
+```python
+EditableTextField(
+    label: str = "編集",
+    initial_value: str = "",
+    min_lines: int = 10,
+    max_lines: int = 20,
+    on_save: Optional[Callable] = None,
+    save_button_text: str = "保存"
+)
+```
+
+**Methods:**
+- `get_value() -> str`
+- `set_value(value: str)`
+
+### FileListItem
+
+File list item with actions.
+
+```python
+FileListItem(
+    icon: str,
+    icon_color: str,
+    title: str,
+    subtitle: Optional[str] = None,
+    on_click: Optional[Callable] = None,
+    actions: Optional[List[Dict[str, Any]]] = None
+)
+```
+
+### SectionHeader
+
+Styled section header.
+
+```python
+SectionHeader(
+    title: str,
+    bgcolor: str = ft.Colors.BLUE_50,
+    actions: Optional[List[ft.Control]] = None
+)
+```
+
+### SearchField
+
+Search field with icon.
+
+```python
+SearchField(
+    hint_text: str = "検索...",
+    on_change: Optional[Callable] = None
+)
+```
+
+### StatusMessage
+
+Colored status message.
+
+```python
+StatusMessage(
+    message: str,
+    status_type: str = "info"  # info, success, warning, error
+)
+```
+
+### Utility Functions
+
+#### `create_loading_overlay(message: str = "処理中...") -> ft.Container`
+Create a loading overlay.
+
+#### `create_confirmation_dialog(...) -> ft.AlertDialog`
+Create a confirmation dialog.
+
+---
+
+## Type Definitions
+
+### OperationStatus (Enum)
+
+```python
+class OperationStatus(Enum):
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+```
+
+### OperationInfo (DataClass)
+
+```python
+@dataclass
+class OperationInfo:
+    operation_id: str
+    status: OperationStatus
+    progress: float  # 0.0 to 1.0
+    message: str
+    result: Any
+    error: Optional[str]
+    start_time: float
+    end_time: Optional[float]
+```
+
+---
+
+## Configuration
+
+**File:** `config/config.py`
+
+### Constants
+
+```python
+# Paths
+NOTES_DIR = Path("data/notes")
+MEMORIES_DIR = Path("data/memories")
+NIPPO_DIR = Path("data/nippo")
+CHAT_LOGS_DIR = Path("data/chat_logs")
+DB_PATH = Path("data/anc_db.json")
+
+# AI Models
+GEMINI_MODEL = "gemini-2.5-pro"
+OLLAMA_MODEL = "gemma3:4b"
+
+# API Keys (from environment)
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+
+# Limits
+MAX_HISTORY_CHARS = 4000
+MAX_MEMORY_CHARS = 2000
+```
+
+---
+
+**Version:** 3.0.0
+**Last Updated:** October 1, 2025
+**Maintained By:** Project A.N.C. Team

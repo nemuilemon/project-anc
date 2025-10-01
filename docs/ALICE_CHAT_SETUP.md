@@ -1,27 +1,30 @@
 # Alice Chat Setup Guide
 
-## 🌸 ありすとの対話機能セットアップガイド
+## 🌸 Alice AI Chat Setup Guide
 
-このガイドでは、Project A.N.C.に新しく追加された「ありす」との対話機能の設定方法を説明します。
+**Version:** 3.0.0
+**Last Updated:** October 1, 2025
 
-## 前提条件
+This guide explains how to set up and use Alice, the AI assistant powered by Google Gemini in Project A.N.C.
 
-- Google AI Studioアカウント
-- Gemini API キー
+## Prerequisites
 
-## セットアップ手順
+- Google AI Studio account
+- Gemini API key (google-generativeai 1.38+)
 
-### 1. Gemini APIキーの取得
+## Setup Instructions
 
-1. [Google AI Studio](https://makersuite.google.com/app/apikey) にアクセス
-2. Googleアカウントでログイン
-3. 「Create API Key」をクリック
-4. 新しいプロジェクトを作成するか、既存のプロジェクトを選択
-5. 生成されたAPIキーをコピー
+### 1. Get Gemini API Key
 
-### 2. 環境変数の設定
+1. Visit [Google AI Studio](https://aistudio.google.com/app/apikey)
+2. Sign in with your Google account
+3. Click "Create API Key"
+4. Create a new project or select an existing one
+5. Copy the generated API key
 
-#### Windows (コマンドプロンプト)
+### 2. Configure Environment Variable
+
+#### Windows (Command Prompt)
 ```cmd
 set GEMINI_API_KEY=your_api_key_here
 ```
@@ -36,91 +39,221 @@ $env:GEMINI_API_KEY = "your_api_key_here"
 export GEMINI_API_KEY="your_api_key_here"
 ```
 
-### 3. .envファイルでの設定（推奨）
+### 3. .env File Configuration (Recommended)
 
-プロジェクトルートに `.env` ファイルを作成し、以下を追加：
+Create a `.env` file in the project root:
 
 ```
 GEMINI_API_KEY=your_api_key_here
 ```
 
-### 4. 動作確認
+### 4. Verify Installation
 
-1. Project A.N.C.を起動
+1. Start Project A.N.C.
 ```bash
 python app/main.py
 ```
 
-2. サイドバーの「ありすと対話」ボタンをクリック
-3. メッセージを入力して送信ボタンをクリック
-4. ありすからの応答を確認
+2. The main chat interface with Alice will load automatically
+3. Type a message and click send
+4. Verify Alice responds
 
-## 機能概要
+## Features
 
-### 💫 追加された機能
+### 💫 Alice Chat Features (v3.0)
 
-1. **チャットインターフェース**
-   - スクロール可能なチャット履歴
-   - リアルタイムメッセージ送受信
-   - タイピングインディケーター
+1. **Conversation-First UI** (`ui_redesign.py`)
+   - Clean, focused chat interface
+   - Scrollable message history with auto-scroll
+   - Real-time message streaming
+   - Thinking indicator during AI processing
+   - Message timestamps
+   - Clear/Export conversation functions
 
-2. **会話履歴管理**
-   - 会話履歴の自動保存
-   - セッション間での履歴保持
-   - 履歴クリア機能
+2. **State Management Integration** (`state_manager.py`)
+   - Centralized conversation state with `AppState`
+   - Thread-safe message history
+   - Observer pattern for reactive UI updates
+   - Session persistence across app restarts
 
-3. **ログ機能**
-   - 日別チャットログ（Markdown形式）
-   - 保存場所: `data/chat_logs/YYYY-MM-DD.md`
-   - システムログとの統合
+3. **Context Management** (`alice_chat_manager.py`)
+   - **Four-layer context system:**
+     1. Long-term memory (`data/notes/0-Memory.md`)
+     2. Today's chat history (from daily log)
+     3. Current session history (AppState)
+     4. Latest user message
+   - Intelligent context window management
+   - Automatic context trimming for API limits
 
-4. **AIモデル設定**
-   - デフォルトモデル: gemini-2.0-flash-exp
-   - 設定可能な会話履歴長
-   - システムプロンプト（0-怪文書.md）の自動読み込み
+4. **Chat Logging System**
+   - Daily chat logs: `data/chat_logs/YYYY-MM-DD.md`
+   - Dialog API logs: `logs/dialogs/dialog-*.json`
+   - System logs: `logs/alice_chat.log.*`
+   - Full request/response tracking for debugging
 
-## トラブルシューティング
+5. **AI Model Configuration**
+   - Default model: **gemini-2.5-pro**
+   - System instruction: `data/notes/0-System-Prompt.md`
+   - Configurable via Settings tab
+   - Support for model switching
 
-### APIキーエラー
-- エラーメッセージ: "ありすとの接続が利用できません"
-- 解決方法: GEMINI_API_KEYが正しく設定されているか確認
+## Troubleshooting
 
-### システムプロンプトエラー
-- ファイル: `data/notes/0-怪文書.md` が存在するか確認
-- ファイルが読み取り可能か確認
+### API Key Errors
 
-### ログファイルエラー
-- `data/chat_logs` ディレクトリの書き込み権限を確認
-- ディスク容量を確認
+**Error:** "Alice connection unavailable" or API initialization failed
 
-## ファイル構成
+**Solutions:**
+- Verify `GEMINI_API_KEY` is correctly set in environment or `.env` file
+- Check API key validity at [Google AI Studio](https://aistudio.google.com/app/apikey)
+- Ensure API key has no leading/trailing spaces
+- Restart the application after setting the environment variable
+
+### System Prompt Errors
+
+**Error:** System instruction not loading
+
+**Solutions:**
+- Verify `data/notes/0-System-Prompt.md` exists
+- Check file read permissions
+- Ensure file encoding is UTF-8
+- Create file from template if missing
+
+### Memory File Errors
+
+**Error:** Long-term memory not loading
+
+**Solutions:**
+- Verify `data/notes/0-Memory.md` exists
+- Check file read/write permissions
+- Ensure proper Markdown formatting
+
+### Chat Log Errors
+
+**Error:** Unable to save conversation logs
+
+**Solutions:**
+- Verify `data/chat_logs/` directory exists and is writable
+- Check available disk space
+- Review permissions on data directory
+- Check `logs/alice_chat.log.*` for detailed errors
+
+### Context Window Errors
+
+**Error:** "Token limit exceeded" or context too large
+
+**Solutions:**
+- Alice automatically trims context to fit API limits
+- Clear conversation history with "Clear" button
+- Reduce long-term memory size if needed
+- Check `logs/dialogs/` for token usage details
+
+## File Structure
 
 ```
 project-anc/
-├── config/
-│   └── config.py                  # Gemini API設定追加
 ├── app/
-│   ├── alice_chat_manager.py      # 新規作成
-│   ├── ui.py                      # チャット機能統合
-│   ├── handlers.py               # チャットハンドラー追加
-│   ├── logger.py                 # チャットロガー追加
-│   └── main.py                   # チャット機能有効化
+│   ├── alice_chat_manager.py      # Gemini API client + context management
+│   ├── ui_redesign.py             # Main chat interface
+│   ├── state_manager.py           # AppState with conversation state
+│   ├── handlers.py                # Chat event handlers
+│   ├── logger.py                  # Logging system with daily rotation
+│   └── main.py                    # App initialization
+├── config/
+│   └── config.py                  # Gemini API configuration
 ├── data/
 │   ├── notes/
-│   │   └── 0-怪文書.md           # システムプロンプト
-│   └── chat_logs/                # チャットログ（自動作成）
-└── logs/
-    └── alice_chat.log            # システムログ（自動作成）
+│   │   ├── 0-System-Prompt.md     # Alice system instruction
+│   │   └── 0-Memory.md            # Long-term memory
+│   └── chat_logs/                 # Daily conversation logs (auto-created)
+│       └── YYYY-MM-DD.md          # Today's chat log
+├── logs/
+│   ├── alice_chat.log.*           # Daily rotated chat logs
+│   └── dialogs/                   # API request/response logs
+│       └── dialog-*.json          # Individual dialog logs
+└── .env                           # Environment variables (API key)
 ```
 
-## 使用方法
+## Usage Guide
 
-1. アプリケーション起動後、サイドバーの「ありすと対話」をクリック
-2. チャット画面が表示されます
-3. メッセージを入力し、Enterまたは送信ボタンで送信
-4. ありすからの応答をお待ちください
-5. 「クリア」ボタンで会話履歴をリセット可能
+### Starting a Conversation
+
+1. Launch Project A.N.C.: `python app/main.py`
+2. The main chat interface loads automatically (conversation-first design)
+3. Type your message in the input field at the bottom
+4. Press Enter or click the Send button
+5. Watch the thinking indicator while Alice processes
+6. View Alice's response in the chat history
+
+### Conversation Management
+
+- **Clear Chat**: Click "Clear" to reset the current session
+- **Export Chat**: Click "Export" to save conversation to a file
+- **View History**: Scroll through message history
+- **Auto-Save**: All messages automatically saved to daily log
+
+### Context Files
+
+Alice uses multiple context sources:
+
+1. **0-System-Prompt.md**: Defines Alice's personality and behavior
+2. **0-Memory.md**: Long-term memory and important information
+3. **Daily logs**: Conversation history from today
+4. **Session state**: Messages from current session
+
+Edit these files to customize Alice's knowledge and behavior.
+
+### Advanced Features
+
+- **State Observers**: UI automatically updates when conversation state changes
+- **Thread Safety**: Concurrent message handling supported
+- **Async Operations**: Non-blocking chat for smooth UI
+- **Dialog Logging**: Every API call logged for debugging
+
+## API Configuration
+
+### Model Selection
+
+Edit in Settings tab or `config/config.py`:
+
+```python
+GEMINI_MODEL = "gemini-2.5-pro"  # Default model
+# Alternatives: gemini-2.0-flash-exp, gemini-1.5-pro
+```
+
+### Context Management
+
+```python
+MAX_HISTORY_CHARS = 4000  # Chat history character limit
+MAX_MEMORY_CHARS = 2000   # Long-term memory limit
+```
+
+Alice automatically trims context to fit within API token limits while preserving important information.
+
+## Best Practices
+
+1. **API Key Security**
+   - Never commit `.env` file to version control
+   - Use `.env` for local development
+   - Use system environment variables for production
+
+2. **Memory Management**
+   - Keep `0-Memory.md` concise and relevant
+   - Update memory with important information
+   - Clear outdated information regularly
+
+3. **System Prompt**
+   - Define clear personality and behavior
+   - Include task-specific instructions
+   - Keep instructions focused and actionable
+
+4. **Log Management**
+   - Review `logs/dialogs/` for API issues
+   - Check `alice_chat.log.*` for system errors
+   - Archive old chat logs periodically
 
 ---
 
-**注意**: APIキーは機密情報です。第三者に共有しないよう注意してください。
+**Version:** 3.0.0
+**Last Updated:** October 1, 2025
+**Security Note:** Keep your API key confidential. Never share it with others.

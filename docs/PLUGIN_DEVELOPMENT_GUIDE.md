@@ -1,617 +1,945 @@
 # Plugin Development Guide
 
-## Overview
+**Version:** 3.0.0
+**Last Updated:** October 1, 2025
+**Target Audience:** Plugin Developers
 
-This guide explains how to create new AI analysis plugins for Project A.N.C.'s modular AI analysis system. The plugin architecture allows developers to easily add new analysis capabilities without modifying existing code.
+## Table of Contents
 
-## Plugin Architecture
+1. [Introduction](#introduction)
+2. [Quick Start](#quick-start)
+3. [Plugin Architecture](#plugin-architecture)
+4. [Development Workflow](#development-workflow)
+5. [Best Practices](#best-practices)
+6. [Testing Plugins](#testing-plugins)
+7. [Advanced Topics](#advanced-topics)
+8. [Examples](#examples)
 
-### Base Plugin Interface
+## Introduction
 
-All plugins must inherit from `BaseAnalysisPlugin` and implement the required methods:
+Project A.N.C. v3.0 features a **zero-configuration plugin system** that automatically discovers and loads analysis plugins at runtime. This guide will help you create powerful, production-ready plugins.
+
+### What is a Plugin?
+
+A plugin is a self-contained Python module that:
+- Inherits from `BaseAnalysisPlugin`
+- Implements analysis functionality
+- Is automatically discovered in `app/ai_analysis/plugins/`
+- Requires zero configuration or registration
+
+### Plugin Capabilities
+
+- **Synchronous Analysis**: Immediate results for quick operations
+- **Asynchronous Analysis**: Non-blocking for long operations
+- **Progress Tracking**: Real-time progress updates to UI
+- **Cancellation Support**: User can cancel long-running operations
+- **Ollama Integration**: Optional AI-powered analysis
+- **Custom Parameters**: Accept plugin-specific configuration
+
+## Quick Start
+
+### Create Your First Plugin (5 minutes)
+
+**Step 1:** Create plugin file `app/ai_analysis/plugins/hello_plugin.py`
 
 ```python
 from ai_analysis.base_plugin import BaseAnalysisPlugin, AnalysisResult
 import time
-from typing import Optional, Callable
-from threading import Event
 
-class MyCustomPlugin(BaseAnalysisPlugin):
+class HelloPlugin(BaseAnalysisPlugin):
+    """A simple hello world plugin"""
+
     def __init__(self):
         super().__init__(
-            name="my_custom",           # Unique identifier
-            description="My custom analysis plugin",
+            name="hello",
+            description="Says hello to your content",
             version="1.0.0"
         )
-    
+
     def analyze(self, content: str, **kwargs) -> AnalysisResult:
-        \"\"\"Synchronous analysis implementation\"\"\"
-        # Your analysis logic here
-        pass
-    
-    def analyze_async(self, 
-                     content: str,
-                     progress_callback: Optional[Callable[[int], None]] = None,
-                     cancel_event: Optional[Event] = None,
-                     **kwargs) -> AnalysisResult:
-        \"\"\"Asynchronous analysis with progress tracking\"\"\"
-        # Your async analysis logic here
-        pass
-    
-    def validate_content(self, content: str) -> bool:
-        \"\"\"Validate content suitability for this analysis\"\"\"
-        return bool(content and content.strip())
+        """Analyze content and say hello"""
+        start_time = time.time()
+
+        word_count = len(content.split())
+
+        return AnalysisResult(
+            success=True,
+            data={
+                "greeting": f"Hello! Your content has {word_count} words.",
+                "content_preview": content[:50] + "..."
+            },
+            message="Hello analysis completed",
+            processing_time=time.time() - start_time,
+            plugin_name=self.name
+        )
+
+    def analyze_async(self, content: str, progress_callback=None,
+                      cancel_event=None, **kwargs) -> AnalysisResult:
+        """Async version with progress tracking"""
+        if progress_callback:
+            progress_callback(0.5, "Saying hello...")
+
+        return self.analyze(content, **kwargs)
 ```
 
-### Required Methods
+**Step 2:** Restart application
 
-#### 1. `__init__(self)`
-Initialize your plugin with unique name, description, and version.
+```bash
+python app/main.py
+```
 
-#### 2. `analyze(self, content: str, **kwargs) -> AnalysisResult`
-Perform synchronous analysis and return results.
+**Step 3:** Use your plugin
 
-#### 3. `analyze_async(self, content, progress_callback, cancel_event, **kwargs) -> AnalysisResult`
-Perform asynchronous analysis with progress tracking and cancellation support.
+Open AI Analysis tab → Select "hello" → Run analysis
 
-#### 4. `validate_content(self, content: str) -> bool`
-Check if content is suitable for your analysis type.
+That's it! Your plugin is live.
+
+## Plugin Architecture
+
+### Class Structure
+
+```python
+from ai_analysis.base_plugin import BaseAnalysisPlugin, AnalysisResult
+
+class MyPlugin(BaseAnalysisPlugin):
+    def __init__(self):
+        super().__init__(
+            name="my_plugin",           # Unique identifier
+            description="Description",   # User-visible description
+            version="1.0.0"             # Semantic version
+        )
+        # Plugin-specific initialization
+        self.requires_ollama = False    # Set True if using Ollama
+        self.max_retries = 3            # Max retry attempts
+        self.timeout_seconds = 60       # Operation timeout
+
+    def analyze(self, content: str, **kwargs) -> AnalysisResult:
+        """Synchronous analysis - REQUIRED"""
+        pass
+
+    def analyze_async(self, content: str, progress_callback=None,
+                      cancel_event=None, **kwargs) -> AnalysisResult:
+        """Async analysis - REQUIRED"""
+        pass
+
+    def validate_content(self, content: str) -> bool:
+        """Content validation - OPTIONAL"""
+        return len(content) > 0
+
+    def get_config(self) -> dict:
+        """Plugin configuration - OPTIONAL"""
+        return {
+            "requires_ollama": self.requires_ollama,
+            "max_retries": self.max_retries,
+            "timeout_seconds": self.timeout_seconds
+        }
+```
 
 ### AnalysisResult Structure
 
 ```python
-@dataclass
-class AnalysisResult:
-    success: bool                    # Whether analysis succeeded
-    data: Dict[str, Any]            # Analysis results
-    message: str                    # User-friendly message
-    processing_time: float = 0.0    # Time taken in seconds
-    plugin_name: str = ""           # Plugin identifier
-    metadata: Dict[str, Any] = None # Additional metadata
-```
-
-## Step-by-Step Plugin Creation
-
-### Step 1: Create Plugin File
-
-Create a new file in `ai_analysis/plugins/` directory:
-
-```bash
-# Example: ai_analysis/plugins/readability_plugin.py
-```
-
-### Step 2: Implement Plugin Class
-
-```python
-\"\"\"Readability Analysis Plugin.
-
-This plugin analyzes text readability using various metrics.
-\"\"\"
-
-import time
-import re
-from typing import List, Dict, Any, Optional, Callable
-from threading import Event
-
-from ..base_plugin import BaseAnalysisPlugin, AnalysisResult
-
-class ReadabilityPlugin(BaseAnalysisPlugin):
-    \"\"\"Readability analysis plugin.
-    
-    Analyzes text complexity using readability metrics like
-    Flesch Reading Ease, word complexity, sentence structure, etc.
-    \"\"\"
-    
-    def __init__(self):
-        super().__init__(
-            name="readability",
-            description="Analyze text readability and complexity",
-            version="1.0.0"
-        )
-    
-    def analyze(self, content: str, **kwargs) -> AnalysisResult:
-        \"\"\"Perform synchronous readability analysis.\"\"\"
-        start_time = time.time()
-        
-        try:
-            # Calculate readability metrics
-            metrics = self._calculate_readability_metrics(content)
-            processing_time = time.time() - start_time
-            
-            return self._create_success_result(
-                data={"readability_metrics": metrics},
-                message=f"Readability score: {metrics.get('flesch_score', 0):.1f}",
-                processing_time=processing_time
-            )
-            
-        except Exception as e:
-            return self._create_error_result("Readability analysis failed", e)
-    
-    def analyze_async(self,
-                     content: str,
-                     progress_callback: Optional[Callable[[int], None]] = None,
-                     cancel_event: Optional[Event] = None,
-                     **kwargs) -> AnalysisResult:
-        \"\"\"Perform asynchronous readability analysis.\"\"\"
-        start_time = time.time()
-        
-        try:
-            self._update_progress(progress_callback, 20)
-            
-            if self._check_cancellation(cancel_event):
-                return self._create_error_result("Analysis cancelled")
-            
-            # Calculate metrics with progress updates
-            metrics = self._calculate_readability_metrics(content)
-            
-            self._update_progress(progress_callback, 100)
-            processing_time = time.time() - start_time
-            
-            return self._create_success_result(
-                data={"readability_metrics": metrics},
-                message=f"Readability score: {metrics.get('flesch_score', 0):.1f}",
-                processing_time=processing_time
-            )
-            
-        except Exception as e:
-            return self._create_error_result("Readability analysis failed", e)
-    
-    def _calculate_readability_metrics(self, content: str) -> Dict[str, Any]:
-        \"\"\"Calculate various readability metrics.\"\"\"
-        # Count sentences, words, syllables
-        sentences = len(re.findall(r'[.!?]+', content))
-        words = len(content.split())
-        syllables = self._count_syllables(content)
-        
-        # Calculate Flesch Reading Ease Score
-        if sentences > 0 and words > 0:
-            flesch_score = 206.835 - (1.015 * (words / sentences)) - (84.6 * (syllables / words))
-        else:
-            flesch_score = 0
-        
-        # Determine reading level
-        if flesch_score >= 90:
-            reading_level = "Very Easy"
-        elif flesch_score >= 80:
-            reading_level = "Easy"
-        elif flesch_score >= 70:
-            reading_level = "Fairly Easy"
-        elif flesch_score >= 60:
-            reading_level = "Standard"
-        elif flesch_score >= 50:
-            reading_level = "Fairly Difficult"
-        elif flesch_score >= 30:
-            reading_level = "Difficult"
-        else:
-            reading_level = "Very Difficult"
-        
-        return {
-            "flesch_score": flesch_score,
-            "reading_level": reading_level,
-            "sentence_count": sentences,
-            "word_count": words,
-            "syllable_count": syllables,
-            "avg_words_per_sentence": words / sentences if sentences > 0 else 0,
-            "avg_syllables_per_word": syllables / words if words > 0 else 0
-        }
-    
-    def _count_syllables(self, text: str) -> int:
-        \"\"\"Simple syllable counting algorithm.\"\"\"
-        # Simple vowel-based syllable counting
-        vowels = "aeiouyAEIOUY"
-        syllable_count = 0
-        prev_was_vowel = False
-        
-        for char in text:
-            if char in vowels:
-                if not prev_was_vowel:
-                    syllable_count += 1
-                prev_was_vowel = True
-            else:
-                prev_was_vowel = False
-        
-        # Handle special cases
-        if text.endswith('e'):
-            syllable_count -= 1
-        if syllable_count == 0:
-            syllable_count = 1
-            
-        return syllable_count
-    
-    def validate_content(self, content: str) -> bool:
-        \"\"\"Validate content for readability analysis.\"\"\"
-        return bool(content and content.strip() and len(content.strip()) > 50)
-```
-
-### Step 3: Register Plugin
-
-Add your plugin to the main `__init__.py` file:
-
-```python
-# In ai_analysis/__init__.py
-from .plugins.readability_plugin import ReadabilityPlugin
-
-__all__ = [
-    'BaseAnalysisPlugin',
-    'AnalysisResult', 
-    'AIAnalysisManager',
-    'TaggingPlugin',
-    'SummarizationPlugin',
-    'SentimentPlugin',
-    'ReadabilityPlugin'  # Add your plugin
-]
-```
-
-### Step 4: Register in AppLogic
-
-Add plugin registration in `logic.py`:
-
-```python
-# In logic.py _setup_ai_plugins method
-def _setup_ai_plugins(self):
-    \"\"\"Initialize and register AI analysis plugins.\"\"\"
-    from ai_analysis import TaggingPlugin, SummarizationPlugin, SentimentPlugin, ReadabilityPlugin
-    
-    # Register plugins
-    self.ai_manager.register_plugin(TaggingPlugin())
-    self.ai_manager.register_plugin(SummarizationPlugin())
-    self.ai_manager.register_plugin(SentimentPlugin())
-    self.ai_manager.register_plugin(ReadabilityPlugin())  # Add your plugin
-```
-
-### Step 5: Add UI Support
-
-Update the UI dropdown in `ui.py`:
-
-```python
-# In ui.py
-self.ai_analysis_dropdown = ft.Dropdown(
-    label="AI Analysis Type",
-    width=150,
-    value="tagging",
-    options=[
-        ft.dropdown.Option("tagging", "Tags"),
-        ft.dropdown.Option("summarization", "Summary"),
-        ft.dropdown.Option("sentiment", "Sentiment"),
-        ft.dropdown.Option("readability", "Readability")  # Add your option
-    ]
+AnalysisResult(
+    success: bool,              # Did analysis succeed?
+    data: Dict[str, Any],       # Analysis results
+    message: str,               # User-facing message
+    processing_time: float,     # Time taken (seconds)
+    plugin_name: str,           # Your plugin name
+    metadata: Dict[str, Any]    # Optional metadata
 )
 ```
 
-### Step 6: Handle Results Display
+## Development Workflow
 
-Add result display logic in `ui.py`:
+### 1. Planning Your Plugin
 
-```python
-# In show_ai_analysis_results method
-elif analysis_type == "readability":
-    metrics = result_data.get("readability_metrics", {})
-    flesch_score = metrics.get("flesch_score", 0)
-    reading_level = metrics.get("reading_level", "Unknown")
-    
-    content_widgets.extend([
-        ft.Text(f"Reading Level: {reading_level}", weight=ft.FontWeight.BOLD),
-        ft.Text(f"Flesch Score: {flesch_score:.1f}"),
-        ft.Text(f"Words: {metrics.get('word_count', 0)}"),
-        ft.Text(f"Sentences: {metrics.get('sentence_count', 0)}"),
-        ft.Text(f"Avg Words/Sentence: {metrics.get('avg_words_per_sentence', 0):.1f}")
-    ])
+**Define the purpose:**
+- What problem does it solve?
+- What input does it need?
+- What output will it produce?
+
+**Choose analysis type:**
+- Quick computation → Synchronous only
+- Long AI processing → Async with progress
+- External API calls → Async with retry logic
+
+**Example planning:**
+```
+Plugin: Readability Analyzer
+Purpose: Assess content readability level
+Input: Text content
+Output: Readability score, grade level, suggestions
+Type: Synchronous (fast computation)
 ```
 
-## Testing Your Plugin
+### 2. Implementation
 
-### Unit Testing
+**Create file structure:**
+```
+app/ai_analysis/plugins/
+├── readability_plugin.py     # Your plugin
+└── __init__.py               # Auto-generated
+```
 
-Create tests for your plugin:
+**Implement core logic:**
 
 ```python
-# In test_working_components.py
-def test_readability_plugin(self):
-    \"\"\"Test readability plugin functionality.\"\"\"
-    from ai_analysis.plugins.readability_plugin import ReadabilityPlugin
-    
+from ai_analysis.base_plugin import BaseAnalysisPlugin, AnalysisResult
+import time
+
+class ReadabilityPlugin(BaseAnalysisPlugin):
+    def __init__(self):
+        super().__init__(
+            name="readability",
+            description="Analyze content readability",
+            version="1.0.0"
+        )
+
+    def analyze(self, content: str, **kwargs) -> AnalysisResult:
+        start_time = time.time()
+
+        try:
+            # Calculate readability metrics
+            words = len(content.split())
+            sentences = content.count('.') + content.count('!') + content.count('?')
+            avg_words_per_sentence = words / max(sentences, 1)
+
+            # Simple readability score
+            if avg_words_per_sentence < 15:
+                level = "Easy"
+                grade = "5-8"
+            elif avg_words_per_sentence < 25:
+                level = "Medium"
+                grade = "9-12"
+            else:
+                level = "Hard"
+                grade = "College"
+
+            return AnalysisResult(
+                success=True,
+                data={
+                    "readability_level": level,
+                    "grade_level": grade,
+                    "words": words,
+                    "sentences": sentences,
+                    "avg_words_per_sentence": round(avg_words_per_sentence, 1)
+                },
+                message=f"Readability: {level} (Grade {grade})",
+                processing_time=time.time() - start_time,
+                plugin_name=self.name
+            )
+
+        except Exception as e:
+            return AnalysisResult(
+                success=False,
+                data={},
+                message=f"Readability analysis failed: {str(e)}",
+                processing_time=time.time() - start_time,
+                plugin_name=self.name
+            )
+
+    def analyze_async(self, content: str, progress_callback=None,
+                      cancel_event=None, **kwargs) -> AnalysisResult:
+        # For simple plugins, just call synchronous version
+        return self.analyze(content, **kwargs)
+```
+
+### 3. Testing
+
+**Manual testing:**
+```bash
+# Restart app
+python app/main.py
+
+# Check logs
+tail -f logs/app.log.*
+# Look for: "Registered plugin: readability"
+```
+
+**Unit testing:**
+```python
+# tests/test_readability_plugin.py
+from ai_analysis.plugins.readability_plugin import ReadabilityPlugin
+
+def test_readability_easy():
     plugin = ReadabilityPlugin()
-    
-    # Test basic functionality
-    self.assertEqual(plugin.name, "readability")
-    self.assertTrue(plugin.validate_content("This is a test sentence with enough content for analysis."))
-    
-    # Test analysis
-    content = "This is a simple test. It has two sentences."
+    content = "This is easy. It is simple. Very clear."
     result = plugin.analyze(content)
-    
-    self.assertTrue(result.success)
-    self.assertIn("readability_metrics", result.data)
-    self.assertGreater(result.processing_time, 0)
+
+    assert result.success
+    assert result.data["readability_level"] == "Easy"
+
+def test_readability_hard():
+    plugin = ReadabilityPlugin()
+    content = "The implementation of quantum entanglement necessitates comprehensive understanding."
+    result = plugin.analyze(content)
+
+    assert result.success
+    assert result.data["readability_level"] in ["Medium", "Hard"]
 ```
 
-### Integration Testing
+### 4. Deployment
 
-Test with AI manager:
+**No deployment needed!** Just commit your plugin file:
 
-```python
-def test_readability_integration(self):
-    \"\"\"Test readability plugin integration with AI manager.\"\"\"
-    from ai_analysis import AIAnalysisManager
-    from ai_analysis.plugins.readability_plugin import ReadabilityPlugin
-    
-    manager = AIAnalysisManager()
-    plugin = ReadabilityPlugin()
-    
-    # Test registration
-    self.assertTrue(manager.register_plugin(plugin))
-    self.assertIn("readability", manager.get_available_plugins())
-    
-    # Test analysis
-    result = manager.analyze("Test content for readability analysis.", "readability")
-    self.assertTrue(result.success)
+```bash
+git add app/ai_analysis/plugins/readability_plugin.py
+git commit -m "feat: Add readability analysis plugin"
+git push
 ```
 
 ## Best Practices
 
-### 1. Error Handling
-- Always wrap analysis logic in try-catch blocks
-- Return meaningful error messages to users
-- Log detailed errors for debugging
+### Code Quality
 
+**1. Error Handling**
 ```python
-try:
-    # Analysis logic
-    result = your_analysis_function(content)
-    return self._create_success_result(data=result, message="Analysis completed")
-except Exception as e:
-    self.logger.error(f"Analysis failed: {e}")
-    return self._create_error_result("Analysis failed", e)
+def analyze(self, content: str, **kwargs) -> AnalysisResult:
+    try:
+        # Analysis logic
+        result = perform_analysis(content)
+        return AnalysisResult(success=True, data=result, ...)
+    except ValueError as e:
+        # Specific error handling
+        return AnalysisResult(success=False, message=f"Invalid input: {e}", ...)
+    except Exception as e:
+        # General error handling
+        return AnalysisResult(success=False, message=f"Analysis failed: {e}", ...)
 ```
 
-### 2. Progress Tracking
-- Update progress at meaningful intervals
-- Check for cancellation regularly
-- Provide percentage-based progress (0-100)
-
-```python
-self._update_progress(progress_callback, 25)   # 25% complete
-# ... processing ...
-if self._check_cancellation(cancel_event):
-    return self._create_error_result("Cancelled by user")
-# ... more processing ...
-self._update_progress(progress_callback, 75)   # 75% complete
-```
-
-### 3. Content Validation
-- Implement meaningful validation in `validate_content()`
-- Check content length, format, language as appropriate
-- Return clear validation requirements
-
+**2. Input Validation**
 ```python
 def validate_content(self, content: str) -> bool:
-    \"\"\"Validate content for analysis.\"\"\"
-    if not content or not content.strip():
+    """Validate content before processing"""
+    if not content or len(content.strip()) == 0:
         return False
-    if len(content.strip()) < 100:  # Minimum length requirement
+    if len(content) > 1_000_000:  # 1MB limit
         return False
-    # Add specific validation for your analysis type
     return True
-```
 
-### 4. Configuration
-- Use class attributes for configurable parameters
-- Document all configuration options
-- Provide sensible defaults
-
-```python
-def __init__(self):
-    super().__init__(name="my_plugin", description="...", version="1.0.0")
-    self.min_content_length = 100
-    self.max_processing_time = 30
-    self.analysis_depth = "standard"
-```
-
-### 5. Documentation
-- Provide comprehensive docstrings
-- Include usage examples
-- Document all parameters and return values
-
-## Advanced Features
-
-### Ollama Integration
-
-For AI-powered plugins, integrate with Ollama:
-
-```python
-import ollama
-import config
-
-def _analyze_with_ollama(self, content: str, prompt: str) -> str:
-    \"\"\"Use Ollama for AI analysis.\"\"\"
-    try:
-        response = ollama.generate(
-            model=config.OLLAMA_MODEL,
-            prompt=prompt
+def analyze(self, content: str, **kwargs) -> AnalysisResult:
+    if not self.validate_content(content):
+        return AnalysisResult(
+            success=False,
+            message="Content validation failed",
+            ...
         )
-        return response['response'].strip()
-    except Exception as e:
-        raise Exception(f"Ollama analysis failed: {e}")
+    # Continue with analysis
 ```
 
-### Custom Parameters
-
-Support plugin-specific parameters:
-
+**3. Performance Optimization**
 ```python
 def analyze(self, content: str, **kwargs) -> AnalysisResult:
-    \"\"\"Analyze with custom parameters.\"\"\"
-    analysis_depth = kwargs.get('depth', 'standard')
-    language = kwargs.get('language', 'auto')
-    
-    # Use parameters in analysis
-    if analysis_depth == 'deep':
-        # Perform more detailed analysis
-        pass
-```
+    start_time = time.time()
 
-### Caching Results
+    # Cache expensive computations
+    if hasattr(self, '_cache') and content in self._cache:
+        cached_result = self._cache[content]
+        return AnalysisResult(
+            success=True,
+            data=cached_result,
+            message="Retrieved from cache",
+            processing_time=time.time() - start_time,
+            plugin_name=self.name
+        )
 
-Implement result caching for expensive operations:
-
-```python
-import hashlib
-
-def analyze(self, content: str, **kwargs) -> AnalysisResult:
-    \"\"\"Analyze with caching support.\"\"\"
-    # Generate cache key
-    cache_key = hashlib.md5(content.encode()).hexdigest()
-    
-    # Check cache
-    if cache_key in self._cache:
-        return self._cache[cache_key]
-    
     # Perform analysis
-    result = self._perform_analysis(content, **kwargs)
-    
-    # Cache result
-    self._cache[cache_key] = result
+    result = expensive_operation(content)
+
+    # Update cache
+    if not hasattr(self, '_cache'):
+        self._cache = {}
+    self._cache[content] = result
+
+    return AnalysisResult(...)
+```
+
+### User Experience
+
+**1. Clear Messages**
+```python
+# Bad
+message="Done"
+
+# Good
+message="Analyzed 150 words, readability level: Easy (Grade 5-8)"
+```
+
+**2. Progress Updates**
+```python
+def analyze_async(self, content: str, progress_callback=None, **kwargs):
+    if progress_callback:
+        progress_callback(0.0, "Starting analysis...")
+
+    # Step 1
+    tokenize(content)
+    if progress_callback:
+        progress_callback(0.3, "Tokenizing content...")
+
+    # Step 2
+    analyze_tokens()
+    if progress_callback:
+        progress_callback(0.6, "Analyzing tokens...")
+
+    # Step 3
+    generate_report()
+    if progress_callback:
+        progress_callback(0.9, "Generating report...")
+
+    if progress_callback:
+        progress_callback(1.0, "Complete!")
+
     return result
 ```
 
-## Plugin Examples
-
-### Simple Text Statistics Plugin
-
+**3. Cancellation Support**
 ```python
-class TextStatsPlugin(BaseAnalysisPlugin):
-    \"\"\"Basic text statistics plugin.\"\"\"
-    
-    def __init__(self):
-        super().__init__(
-            name="textstats",
-            description="Basic text statistics analysis",
-            version="1.0.0"
-        )
-    
-    def analyze(self, content: str, **kwargs) -> AnalysisResult:
-        start_time = time.time()
-        
-        try:
-            stats = {
-                "character_count": len(content),
-                "word_count": len(content.split()),
-                "sentence_count": len(re.findall(r'[.!?]+', content)),
-                "paragraph_count": len([p for p in content.split('\n\n') if p.strip()]),
-                "avg_word_length": sum(len(word) for word in content.split()) / len(content.split()) if content.split() else 0
-            }
-            
-            processing_time = time.time() - start_time
-            
-            return self._create_success_result(
-                data={"statistics": stats},
-                message=f"Analyzed {stats['word_count']} words",
-                processing_time=processing_time
+def analyze_async(self, content: str, cancel_event=None, **kwargs):
+    for chunk in large_content_chunks:
+        # Check cancellation
+        if cancel_event and cancel_event.is_set():
+            return AnalysisResult(
+                success=False,
+                message="Analysis cancelled by user",
+                ...
             )
-        except Exception as e:
-            return self._create_error_result("Text analysis failed", e)
+
+        # Process chunk
+        process(chunk)
+
+    return result
 ```
 
-### Language Detection Plugin
+## Testing Plugins
+
+### Unit Tests
 
 ```python
-class LanguageDetectionPlugin(BaseAnalysisPlugin):
-    \"\"\"Language detection plugin.\"\"\"
-    
+# tests/test_my_plugin.py
+import pytest
+from ai_analysis.plugins.my_plugin import MyPlugin
+
+class TestMyPlugin:
+    @pytest.fixture
+    def plugin(self):
+        """Create plugin instance for testing"""
+        return MyPlugin()
+
+    def test_basic_analysis(self, plugin):
+        """Test basic functionality"""
+        result = plugin.analyze("test content")
+        assert result.success
+        assert result.plugin_name == "my_plugin"
+        assert "data_field" in result.data
+
+    def test_empty_content(self, plugin):
+        """Test edge case: empty content"""
+        result = plugin.analyze("")
+        assert not result.success
+
+    def test_large_content(self, plugin):
+        """Test edge case: large content"""
+        large_content = "word " * 100000
+        result = plugin.analyze(large_content)
+        assert result.success or "too large" in result.message.lower()
+
+    def test_async_with_progress(self, plugin):
+        """Test async analysis with progress tracking"""
+        progress_calls = []
+
+        def track_progress(percent, message):
+            progress_calls.append((percent, message))
+
+        result = plugin.analyze_async(
+            "test content",
+            progress_callback=track_progress
+        )
+
+        assert result.success
+        assert len(progress_calls) > 0
+
+    def test_cancellation(self, plugin):
+        """Test cancellation support"""
+        import threading
+        cancel_event = threading.Event()
+        cancel_event.set()  # Immediately cancelled
+
+        result = plugin.analyze_async(
+            "test content",
+            cancel_event=cancel_event
+        )
+
+        assert not result.success
+        assert "cancel" in result.message.lower()
+```
+
+### Integration Tests
+
+```python
+# tests/test_plugin_integration.py
+from app.logic import AppLogic
+
+def test_plugin_discovery():
+    """Test plugin is discovered by system"""
+    logic = AppLogic()
+    plugins = logic.get_available_plugins()
+
+    plugin_names = [p['name'] for p in plugins]
+    assert "my_plugin" in plugin_names
+
+def test_plugin_execution():
+    """Test plugin execution through AppLogic"""
+    logic = AppLogic()
+    result = logic.run_ai_analysis("test content", "my_plugin")
+
+    assert result['success']
+    assert 'data' in result
+
+def test_plugin_with_database():
+    """Test plugin results stored in database"""
+    logic = AppLogic()
+
+    # Run analysis
+    result = logic.run_ai_analysis_async(
+        path="test.txt",
+        content="test content",
+        analysis_type="my_plugin"
+    )
+
+    # Verify stored in database
+    file_record = logic.get_file("test.txt")
+    assert 'ai_analysis' in file_record
+    assert 'my_plugin' in file_record['ai_analysis']
+```
+
+## Advanced Topics
+
+### Using Ollama for AI-Powered Analysis
+
+```python
+import ollama
+from config.config import OLLAMA_MODEL
+
+class AIAnalysisPlugin(BaseAnalysisPlugin):
     def __init__(self):
         super().__init__(
-            name="language",
+            name="ai_analyzer",
+            description="AI-powered content analysis",
+            version="1.0.0"
+        )
+        self.requires_ollama = True  # Mark as requiring Ollama
+
+    def analyze(self, content: str, **kwargs) -> AnalysisResult:
+        start_time = time.time()
+
+        try:
+            # Call Ollama API
+            response = ollama.chat(
+                model=OLLAMA_MODEL,
+                messages=[{
+                    "role": "user",
+                    "content": f"Analyze this content: {content}"
+                }]
+            )
+
+            ai_response = response['message']['content']
+
+            return AnalysisResult(
+                success=True,
+                data={"ai_analysis": ai_response},
+                message="AI analysis completed",
+                processing_time=time.time() - start_time,
+                plugin_name=self.name
+            )
+
+        except ollama.ResponseError as e:
+            return AnalysisResult(
+                success=False,
+                message=f"Ollama error: {str(e)}",
+                processing_time=time.time() - start_time,
+                plugin_name=self.name
+            )
+
+        except Exception as e:
+            return AnalysisResult(
+                success=False,
+                message=f"Analysis failed: {str(e)}",
+                processing_time=time.time() - start_time,
+                plugin_name=self.name
+            )
+```
+
+### Retry Logic with Exponential Backoff
+
+```python
+import time
+
+class RobustPlugin(BaseAnalysisPlugin):
+    def analyze_with_retry(self, content: str, **kwargs) -> AnalysisResult:
+        """Analyze with exponential backoff retry"""
+        max_retries = self.max_retries
+        base_delay = 1  # seconds
+
+        for attempt in range(max_retries):
+            try:
+                result = self._perform_analysis(content, **kwargs)
+                return result
+
+            except TemporaryError as e:
+                if attempt < max_retries - 1:
+                    delay = base_delay * (2 ** attempt)  # Exponential backoff
+                    time.sleep(delay)
+                    continue
+                else:
+                    return AnalysisResult(
+                        success=False,
+                        message=f"Failed after {max_retries} attempts: {e}",
+                        plugin_name=self.name
+                    )
+```
+
+### Custom Configuration
+
+```python
+class ConfigurablePlugin(BaseAnalysisPlugin):
+    def __init__(self, custom_config: dict = None):
+        super().__init__(
+            name="configurable",
+            description="Plugin with custom configuration",
+            version="1.0.0"
+        )
+
+        # Load custom configuration
+        self.config = custom_config or {}
+        self.threshold = self.config.get('threshold', 0.5)
+        self.mode = self.config.get('mode', 'default')
+
+    def get_config(self) -> dict:
+        """Return current configuration"""
+        return {
+            'threshold': self.threshold,
+            'mode': self.mode,
+            'requires_ollama': self.requires_ollama
+        }
+
+    def update_config(self, **kwargs):
+        """Update configuration dynamically"""
+        if 'threshold' in kwargs:
+            self.threshold = kwargs['threshold']
+        if 'mode' in kwargs:
+            self.mode = kwargs['mode']
+
+    def analyze(self, content: str, **kwargs) -> AnalysisResult:
+        # Use configuration in analysis
+        if self.mode == 'strict':
+            threshold = self.threshold * 0.8
+        else:
+            threshold = self.threshold
+
+        # Perform analysis with configured parameters
+        score = calculate_score(content)
+        passed = score >= threshold
+
+        return AnalysisResult(
+            success=True,
+            data={
+                'score': score,
+                'passed': passed,
+                'threshold_used': threshold,
+                'mode': self.mode
+            },
+            message=f"Score: {score:.2f} (threshold: {threshold})",
+            plugin_name=self.name
+        )
+```
+
+## Examples
+
+### Example 1: Word Frequency Analyzer
+
+```python
+from collections import Counter
+from ai_analysis.base_plugin import BaseAnalysisPlugin, AnalysisResult
+import time
+
+class WordFrequencyPlugin(BaseAnalysisPlugin):
+    """Analyze word frequency in content"""
+
+    def __init__(self):
+        super().__init__(
+            name="word_frequency",
+            description="Analyze word frequency and find most common words",
+            version="1.0.0"
+        )
+
+    def analyze(self, content: str, top_n: int = 10, **kwargs) -> AnalysisResult:
+        start_time = time.time()
+
+        try:
+            # Tokenize and count
+            words = content.lower().split()
+            word_counts = Counter(words)
+
+            # Get top N words
+            top_words = word_counts.most_common(top_n)
+
+            # Calculate statistics
+            total_words = len(words)
+            unique_words = len(word_counts)
+
+            return AnalysisResult(
+                success=True,
+                data={
+                    "top_words": [
+                        {"word": word, "count": count, "frequency": count/total_words}
+                        for word, count in top_words
+                    ],
+                    "total_words": total_words,
+                    "unique_words": unique_words,
+                    "vocabulary_richness": unique_words / total_words if total_words > 0 else 0
+                },
+                message=f"Found {unique_words} unique words in {total_words} total words",
+                processing_time=time.time() - start_time,
+                plugin_name=self.name
+            )
+
+        except Exception as e:
+            return AnalysisResult(
+                success=False,
+                data={},
+                message=f"Word frequency analysis failed: {str(e)}",
+                processing_time=time.time() - start_time,
+                plugin_name=self.name
+            )
+
+    def analyze_async(self, content: str, progress_callback=None,
+                      cancel_event=None, **kwargs) -> AnalysisResult:
+        if progress_callback:
+            progress_callback(0.5, "Analyzing word frequency...")
+
+        return self.analyze(content, **kwargs)
+```
+
+### Example 2: Language Detector
+
+```python
+from ai_analysis.base_plugin import BaseAnalysisPlugin, AnalysisResult
+import time
+
+class LanguageDetectorPlugin(BaseAnalysisPlugin):
+    """Detect the language of content"""
+
+    def __init__(self):
+        super().__init__(
+            name="language_detector",
             description="Detect content language",
             version="1.0.0"
         )
-    
+
+        # Simple language patterns (extend with real language detection library)
+        self.patterns = {
+            'japanese': ['は', 'が', 'を', 'に', 'の'],
+            'english': ['the', 'is', 'are', 'and', 'of'],
+            'chinese': ['的', '是', '了', '在', '和']
+        }
+
+    def detect_language(self, content: str) -> tuple:
+        """Detect language with confidence score"""
+        scores = {}
+
+        for language, markers in self.patterns.items():
+            score = sum(content.count(marker) for marker in markers)
+            scores[language] = score
+
+        if not scores or max(scores.values()) == 0:
+            return 'unknown', 0.0
+
+        detected = max(scores, key=scores.get)
+        confidence = scores[detected] / sum(scores.values())
+
+        return detected, confidence
+
     def analyze(self, content: str, **kwargs) -> AnalysisResult:
         start_time = time.time()
-        
+
         try:
-            # Simple language detection based on character patterns
-            language = self._detect_language(content)
-            confidence = self._calculate_confidence(content, language)
-            
-            processing_time = time.time() - start_time
-            
-            return self._create_success_result(
+            language, confidence = self.detect_language(content)
+
+            return AnalysisResult(
+                success=True,
                 data={
                     "detected_language": language,
-                    "confidence": confidence,
-                    "language_name": self._get_language_name(language)
+                    "confidence": round(confidence, 2),
+                    "all_scores": {lang: score for lang, score in
+                                  zip(self.patterns.keys(),
+                                      [sum(content.count(m) for m in markers)
+                                       for markers in self.patterns.values()])}
                 },
-                message=f"Detected language: {self._get_language_name(language)} ({confidence:.1%} confidence)",
-                processing_time=processing_time
+                message=f"Detected: {language.title()} (confidence: {confidence:.1%})",
+                processing_time=time.time() - start_time,
+                plugin_name=self.name
             )
+
         except Exception as e:
-            return self._create_error_result("Language detection failed", e)
-    
-    def _detect_language(self, content: str) -> str:
-        \"\"\"Simple language detection logic.\"\"\"
-        # Check for Japanese characters
-        if re.search(r'[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]', content):
-            return "ja"
-        # Check for common English patterns
-        elif re.search(r'\b(the|and|or|but|in|on|at|to|for|of|with|by)\b', content.lower()):
-            return "en"
-        else:
-            return "unknown"
+            return AnalysisResult(
+                success=False,
+                data={},
+                message=f"Language detection failed: {str(e)}",
+                processing_time=time.time() - start_time,
+                plugin_name=self.name
+            )
+
+    def analyze_async(self, content: str, progress_callback=None,
+                      cancel_event=None, **kwargs) -> AnalysisResult:
+        return self.analyze(content, **kwargs)
+```
+
+### Example 3: Content Statistics
+
+```python
+from ai_analysis.base_plugin import BaseAnalysisPlugin, AnalysisResult
+import time
+import re
+
+class ContentStatisticsPlugin(BaseAnalysisPlugin):
+    """Comprehensive content statistics"""
+
+    def __init__(self):
+        super().__init__(
+            name="content_statistics",
+            description="Generate comprehensive content statistics",
+            version="1.0.0"
+        )
+
+    def analyze(self, content: str, **kwargs) -> AnalysisResult:
+        start_time = time.time()
+
+        try:
+            # Character statistics
+            total_chars = len(content)
+            letters = sum(c.isalpha() for c in content)
+            digits = sum(c.isdigit() for c in content)
+            spaces = sum(c.isspace() for c in content)
+            punctuation = total_chars - letters - digits - spaces
+
+            # Word statistics
+            words = content.split()
+            word_count = len(words)
+            avg_word_length = sum(len(w) for w in words) / word_count if word_count > 0 else 0
+
+            # Sentence statistics
+            sentences = re.split(r'[.!?]+', content)
+            sentence_count = len([s for s in sentences if s.strip()])
+            avg_sentence_length = word_count / sentence_count if sentence_count > 0 else 0
+
+            # Paragraph statistics
+            paragraphs = [p for p in content.split('\n\n') if p.strip()]
+            paragraph_count = len(paragraphs)
+
+            return AnalysisResult(
+                success=True,
+                data={
+                    "characters": {
+                        "total": total_chars,
+                        "letters": letters,
+                        "digits": digits,
+                        "spaces": spaces,
+                        "punctuation": punctuation
+                    },
+                    "words": {
+                        "count": word_count,
+                        "average_length": round(avg_word_length, 1)
+                    },
+                    "sentences": {
+                        "count": sentence_count,
+                        "average_length": round(avg_sentence_length, 1)
+                    },
+                    "paragraphs": {
+                        "count": paragraph_count
+                    },
+                    "reading_time_minutes": round(word_count / 200, 1)  # Assuming 200 WPM
+                },
+                message=f"{word_count} words, {sentence_count} sentences, ~{round(word_count/200, 1)} min read",
+                processing_time=time.time() - start_time,
+                plugin_name=self.name
+            )
+
+        except Exception as e:
+            return AnalysisResult(
+                success=False,
+                data={},
+                message=f"Statistics analysis failed: {str(e)}",
+                processing_time=time.time() - start_time,
+                plugin_name=self.name
+            )
+
+    def analyze_async(self, content: str, progress_callback=None,
+                      cancel_event=None, **kwargs) -> AnalysisResult:
+        if progress_callback:
+            progress_callback(0.3, "Counting characters...")
+            progress_callback(0.6, "Analyzing words...")
+            progress_callback(0.9, "Calculating statistics...")
+
+        return self.analyze(content, **kwargs)
 ```
 
 ## Troubleshooting
 
-### Common Issues
+### Plugin Not Discovered
 
-1. **Plugin Not Loading**
-   - Check that plugin file is in correct directory
-   - Verify __init__.py includes your plugin
-   - Check for syntax errors in plugin code
+**Issue:** Plugin file created but not showing in UI
 
-2. **Import Errors**
-   - Ensure all required dependencies are installed
-   - Check import paths and module names
-   - Verify BaseAnalysisPlugin is properly imported
+**Checklist:**
+- [ ] File is in `app/ai_analysis/plugins/` directory
+- [ ] Filename ends with `.py`
+- [ ] Class inherits from `BaseAnalysisPlugin`
+- [ ] `__init__()` calls `super().__init__()`
+- [ ] Application has been restarted
+- [ ] Check `logs/app.log.*` for errors
 
-3. **Analysis Failures**
-   - Check content validation logic
-   - Verify error handling is implemented
-   - Test with various content types and lengths
+### Import Errors
 
-4. **UI Integration Issues**
-   - Ensure plugin name matches dropdown option value
-   - Add result display logic for your data format
-   - Test UI components with your result structure
+**Issue:** Plugin fails to import
 
-### Debugging Tips
+**Solutions:**
+- Check for syntax errors: `python -m py_compile app/ai_analysis/plugins/my_plugin.py`
+- Verify all imports are available
+- Test import in isolation:
+  ```python
+  python -c "from ai_analysis.plugins.my_plugin import MyPlugin; print('OK')"
+  ```
 
-1. **Add Debug Logging**
-   ```python
-   import logging
-   logger = logging.getLogger(__name__)
-   logger.debug(f"Processing content: {content[:100]}...")
-   ```
+### Performance Issues
 
-2. **Test Incrementally**
-   - Test plugin in isolation first
-   - Add to manager and test
-   - Finally integrate with UI
+**Issue:** Plugin runs slowly
 
-3. **Use Virtual Environment Testing**
-   ```bash
-   source .venv/Scripts/activate
-   python -c "from ai_analysis.plugins.your_plugin import YourPlugin; print('Import successful')"
-   ```
+**Solutions:**
+- Profile your code:
+  ```python
+  import cProfile
+  cProfile.run('plugin.analyze(content)')
+  ```
+- Use async for long operations
+- Implement caching for repeated analyses
+- Break down large operations with progress updates
 
-## Contributing
+## Resources
 
-When contributing new plugins:
+### Documentation
+- [AI Analysis System Overview](./AI_ANALYSIS_SYSTEM.md)
+- [API Reference](./API_REFERENCE.md)
+- [Testing Guide](./TESTING_GUIDE.md)
 
-1. Follow the established patterns and conventions
-2. Include comprehensive tests
-3. Add documentation and usage examples
-4. Update relevant documentation files
-5. Test in virtual environment
-6. Ensure backward compatibility
+### Example Plugins
+- `app/ai_analysis/plugins/tagging_plugin.py` - AI-powered tagging
+- `app/ai_analysis/plugins/summarization_plugin.py` - Text summarization
+- `app/ai_analysis/plugins/sentiment_compass_plugin.py` - Sentiment analysis
 
-This plugin system makes Project A.N.C. infinitely extensible - new analysis capabilities can be added easily while maintaining system stability and user experience.
+### Support
+- GitHub Issues: Report bugs or request features
+- Code Reviews: Submit PR for plugin review
+
+---
+
+**Version:** 3.0.0
+**Last Updated:** October 1, 2025
+**Maintained By:** Project A.N.C. Team

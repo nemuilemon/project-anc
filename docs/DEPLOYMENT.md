@@ -1,569 +1,687 @@
 # Deployment Guide
 
-## Production Deployment
+**Version:** 3.0.0
+**Last Updated:** October 1, 2025
 
-### 🚀 Quick Production Setup
+## Table of Contents
 
-#### System Requirements
-- **OS**: Windows 10+, macOS 10.15+, Ubuntu 20.04+
-- **Python**: 3.12+ 
-- **Memory**: 4GB RAM minimum, 8GB recommended
-- **Storage**: 500MB for application + content storage
-- **Network**: Optional (for Ollama model downloads)
+1. [Overview](#overview)
+2. [Prerequisites](#prerequisites)
+3. [Development Deployment](#development-deployment)
+4. [Production Deployment](#production-deployment)
+5. [Docker Deployment](#docker-deployment)
+6. [Environment Configuration](#environment-configuration)
+7. [Post-Deployment](#post-deployment)
+8. [Troubleshooting](#troubleshooting)
 
-#### Production Installation
+## Overview
+
+This guide covers deploying Project A.N.C. v3.0 in various environments.
+
+### Deployment Options
+
+- **Development**: Local development with hot-reload
+- **Production**: Optimized production deployment
+- **Docker**: Containerized deployment
+- **Portable**: Standalone executable (future)
+
+## Prerequisites
+
+### System Requirements
+
+**Minimum:**
+- Python 3.12+
+- 4GB RAM
+- 2GB disk space
+- Windows 10/11, macOS 11+, or Linux
+
+**Recommended:**
+- Python 3.12+
+- 8GB RAM
+- 5GB disk space
+- SSD storage
+
+### Required Software
+
+1. **Python 3.12+**
+   ```bash
+   python --version  # Should be 3.12 or higher
+   ```
+
+2. **pip** (Python package manager)
+   ```bash
+   pip --version
+   ```
+
+3. **Git** (for version control)
+   ```bash
+   git --version
+   ```
+
+4. **Ollama** (for AI analysis)
+   - Download from https://ollama.com/download
+   - Install and run: `ollama serve`
+
+### API Keys
+
+1. **Google Gemini API Key**
+   - Get from https://aistudio.google.com/app/apikey
+   - Required for Alice chat functionality
+
+## Development Deployment
+
+### 1. Clone Repository
 
 ```bash
-# 1. Clone repository
-git clone https://github.com/your-username/project-anc.git
+git clone https://github.com/yourusername/project-anc.git
 cd project-anc
-
-# 2. Create production virtual environment
-python -m venv .venv
-
-# 3. Activate virtual environment
-# Windows:
-.venv\Scripts\activate
-# macOS/Linux:
-source .venv/bin/activate
-
-# 4. Install production dependencies
-pip install -r requirements.txt
-
-# 5. Install and configure Ollama
-# Download from https://ollama.com/download
-ollama pull llama3.1:8b  # Or your preferred model
-
-# 6. Configure application
-cp config.py.example config.py
-# Edit config.py with your settings
-
-# 7. Initialize application
-python main.py
 ```
 
-### 🔧 Production Configuration
+### 2. Create Virtual Environment
 
-#### Environment Configuration (`config.py`)
+**Windows:**
+```bash
+python -m venv .venv
+.venv\Scripts\activate
+```
 
+**macOS/Linux:**
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+### 3. Install Dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+**requirements.txt:**
+```txt
+flet>=0.28.0
+tinydb>=4.8.0
+ollama>=0.1.7
+google-generativeai>=1.38.0
+python-dotenv>=1.0.0
+```
+
+### 4. Configure Environment
+
+Create `.env` file:
+
+```bash
+# .env
+GEMINI_API_KEY=your_gemini_api_key_here
+OLLAMA_MODEL=gemma3:4b
+GEMINI_MODEL=gemini-2.5-pro
+```
+
+### 5. Initialize Data Directories
+
+```bash
+# Windows
+mkdir data\notes data\memories data\nippo data\chat_logs logs
+
+# macOS/Linux
+mkdir -p data/{notes,memories,nippo,chat_logs} logs
+```
+
+### 6. Create Initial Files
+
+**data/notes/0-System-Prompt.md:**
+```markdown
+# Alice System Prompt
+
+You are Alice, a helpful AI assistant.
+```
+
+**data/notes/0-Memory.md:**
+```markdown
+# Alice's Long-Term Memory
+
+Important information Alice should remember.
+```
+
+### 7. Setup Ollama
+
+```bash
+# Pull required model
+ollama pull gemma3:4b
+
+# Verify installation
+ollama list
+```
+
+### 8. Run Application
+
+```bash
+python app/main.py
+```
+
+### 9. Verify Installation
+
+- Check logs in `logs/app.log.*`
+- Verify plugins discovered: "Discovered 3 plugins"
+- Test Alice chat: Send a message
+- Test AI analysis: Run tagging on sample text
+
+## Production Deployment
+
+### 1. Clone and Setup
+
+```bash
+git clone https://github.com/yourusername/project-anc.git
+cd project-anc
+python -m venv .venv
+source .venv/bin/activate  # or .venv\Scripts\activate on Windows
+```
+
+### 2. Install Production Dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+### 3. Configure Production Environment
+
+**.env:**
+```bash
+# Production settings
+GEMINI_API_KEY=your_production_api_key
+OLLAMA_MODEL=gemma3:4b
+GEMINI_MODEL=gemini-2.5-pro
+
+# Optional: Production-specific settings
+LOG_LEVEL=INFO
+MAX_WORKERS=4
+```
+
+### 4. Production Optimizations
+
+**config/config.py adjustments:**
 ```python
 # Production settings
-PRODUCTION_MODE = True
-DEBUG_MODE = False
-
-# File Management
-NOTES_DIR = "/opt/project-anc/data/notes"
-ARCHIVE_DIR = "/opt/project-anc/data/notes/.archive"
-DATABASE_PATH = "/opt/project-anc/data/anc_db.json"
-
-# AI Configuration
-OLLAMA_MODEL = "llama3.1:8b"
-OLLAMA_HOST = "localhost:11434"
-
-# Security Settings
-MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
-ALLOWED_EXTENSIONS = [".md", ".txt"]
-ENABLE_SECURITY_LOGGING = True
-
-# Performance Settings
-MAX_FILES_DISPLAY = 1000
-AUTO_SAVE_INTERVAL = 30
-ENABLE_PERFORMANCE_MONITORING = True
-
-# Logging Configuration
+DEBUG = False
 LOG_LEVEL = "INFO"
-LOG_ROTATION_SIZE = 10 * 1024 * 1024  # 10MB
-LOG_RETENTION_DAYS = 30
+MAX_WORKERS = 4
+ENABLE_PROFILING = False
 ```
 
-#### Directory Structure
+### 5. Setup System Service (Linux)
 
-**Development/Local Structure (Current):**
-```
-project-anc/
-├── main.py                 # Application entry point
-├── ui.py                   # User interface components
-├── logic.py                # Business logic
-├── handlers.py             # Event handling
-├── security.py             # Security utilities
-├── async_operations.py     # Background processing
-├── logger.py               # Logging system
-├── config.py               # Configuration
-├── log_utils.py            # Log utilities
-├── ai_analysis/            # AI analysis system
-│   ├── __init__.py
-│   ├── base_plugin.py
-│   ├── manager.py
-│   └── plugins/
-├── docs/                   # Documentation
-├── tests/                  # Test files
-├── notes/                  # User notes (created at runtime)
-├── logs/                   # Log files (created at runtime)
-├── anc_db.json             # Database (created at runtime)
-├── requirements.txt        # Dependencies
-└── .venv/                  # Virtual environment
+**/etc/systemd/system/project-anc.service:**
+```ini
+[Unit]
+Description=Project A.N.C.
+After=network.target
+
+[Service]
+Type=simple
+User=anc
+WorkingDirectory=/opt/project-anc
+Environment="PATH=/opt/project-anc/.venv/bin"
+ExecStart=/opt/project-anc/.venv/bin/python app/main.py
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
 ```
 
-**Production Server Structure (Recommended):**
-```
-/opt/project-anc/
-├── app/                    # Application code
-│   ├── main.py
-│   ├── ui.py
-│   ├── logic.py
-│   ├── handlers.py
-│   ├── security.py
-│   ├── async_operations.py
-│   ├── logger.py
-│   ├── config.py
-│   ├── log_utils.py
-│   └── ai_analysis/
-├── data/                   # Data directory
-│   ├── notes/              # User notes
-│   ├── anc_db.json         # Database
-│   └── backups/            # Automated backups
-├── logs/                   # Log files
-├── config/                 # Configuration files
-└── .venv/                  # Virtual environment
+Enable and start:
+```bash
+sudo systemctl enable project-anc
+sudo systemctl start project-anc
+sudo systemctl status project-anc
 ```
 
-### 🐳 Docker Deployment
+### 6. Setup Log Rotation
 
-#### Dockerfile
+**/etc/logrotate.d/project-anc:**
+```
+/opt/project-anc/logs/*.log* {
+    daily
+    rotate 30
+    compress
+    delaycompress
+    notifempty
+    create 0640 anc anc
+    sharedscripts
+    postrotate
+        systemctl reload project-anc > /dev/null 2>&1 || true
+    endscript
+}
+```
 
+## Docker Deployment
+
+### 1. Create Dockerfile
+
+**Dockerfile:**
 ```dockerfile
 FROM python:3.12-slim
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install Ollama
-RUN curl -fsSL https://ollama.com/install.sh | sh
-
-# Set working directory
 WORKDIR /app
 
-# Copy requirements and install Python dependencies
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
+# Copy application
 COPY . .
 
-# Create data directory
-RUN mkdir -p /app/data/notes
+# Create data directories
+RUN mkdir -p data/notes data/memories data/nippo data/chat_logs logs
 
-# Expose ports
-EXPOSE 8080 11434
+# Environment variables
+ENV PYTHONUNBUFFERED=1
 
-# Set environment variables
-ENV PYTHONPATH=/app
-ENV NOTES_DIR=/app/data/notes
-ENV DATABASE_PATH=/app/data/anc_db.json
+# Expose port (if needed for web interface)
+EXPOSE 8080
 
-# Start script
-COPY docker-entrypoint.sh /
-RUN chmod +x /docker-entrypoint.sh
-
-ENTRYPOINT ["/docker-entrypoint.sh"]
+# Run application
+CMD ["python", "app/main.py"]
 ```
 
-#### docker-compose.yml
+### 2. Create Docker Compose
 
+**docker-compose.yml:**
 ```yaml
 version: '3.8'
 
 services:
   project-anc:
     build: .
-    ports:
-      - "8080:8080"
-      - "11434:11434"
+    container_name: project-anc
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - OLLAMA_MODEL=gemma3:4b
+      - GEMINI_MODEL=gemini-2.5-pro
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
-    environment:
-      - PRODUCTION_MODE=true
-      - DEBUG_MODE=false
-      - OLLAMA_HOST=localhost:11434
     restart: unless-stopped
+    depends_on:
+      - ollama
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    volumes:
+      - ollama_data:/root/.ollama
+    ports:
+      - "11434:11434"
+    restart: unless-stopped
+
+volumes:
+  ollama_data:
 ```
 
-#### Docker Commands
+### 3. Build and Run
 
 ```bash
-# Build and run
+# Build image
+docker-compose build
+
+# Start services
 docker-compose up -d
 
 # View logs
 docker-compose logs -f
 
-# Scale service
-docker-compose up -d --scale project-anc=2
-
-# Update application
-docker-compose pull
-docker-compose up -d
-
-# Backup data
-docker run --rm -v project-anc_data:/data -v $(pwd):/backup alpine tar czf /backup/backup.tar.gz /data
+# Stop services
+docker-compose down
 ```
 
-### ☁️ Cloud Deployment
-
-#### AWS EC2 Deployment
+### 4. Initialize Ollama Model
 
 ```bash
-# 1. Launch EC2 instance (t3.medium recommended)
-# 2. Install dependencies
-sudo apt update
-sudo apt install python3 python3-pip python3-venv git
+# Pull model in ollama container
+docker-compose exec ollama ollama pull gemma3:4b
 
-# 3. Clone and setup application
-git clone https://github.com/your-username/project-anc.git
-cd project-anc
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-
-# 4. Install Ollama
-curl -fsSL https://ollama.com/install.sh | sh
-ollama pull llama3.1:8b
-
-# 5. Configure systemd service
-sudo cp deployment/project-anc.service /etc/systemd/system/
-sudo systemctl enable project-anc
-sudo systemctl start project-anc
+# Verify
+docker-compose exec ollama ollama list
 ```
 
-#### Systemd Service (`project-anc.service`)
+## Environment Configuration
 
-```ini
-[Unit]
-Description=Project A.N.C. AI Note Taking System
-After=network.target
+### Environment Variables
 
-[Service]
-Type=simple
-User=project-anc
-WorkingDirectory=/opt/project-anc
-Environment=PYTHONPATH=/opt/project-anc
-ExecStart=/opt/project-anc/.venv/bin/python main.py
-Restart=always
-RestartSec=10
+| Variable | Description | Default | Required |
+|----------|-------------|---------|----------|
+| `GEMINI_API_KEY` | Google Gemini API key | None | Yes |
+| `OLLAMA_MODEL` | Ollama model name | gemma3:4b | No |
+| `GEMINI_MODEL` | Gemini model name | gemini-2.5-pro | No |
+| `LOG_LEVEL` | Logging level | INFO | No |
+| `MAX_WORKERS` | Max async workers | 4 | No |
+| `DEBUG` | Debug mode | False | No |
 
-[Install]
-WantedBy=multi-user.target
-```
+### Configuration Files
 
-#### nginx Configuration
-
-```nginx
-server {
-    listen 80;
-    server_name your-domain.com;
-
-    location / {
-        proxy_pass http://localhost:8080;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-
-    # WebSocket support
-    location /ws {
-        proxy_pass http://localhost:8080;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-    }
-}
-```
-
-### 🔒 Security Configuration
-
-#### SSL/TLS Setup
-
-```bash
-# Install certbot
-sudo apt install certbot python3-certbot-nginx
-
-# Get SSL certificate
-sudo certbot --nginx -d your-domain.com
-
-# Auto-renewal
-sudo crontab -e
-# Add: 0 12 * * * /usr/bin/certbot renew --quiet
-```
-
-#### Firewall Configuration
-
-```bash
-# UFW setup
-sudo ufw enable
-sudo ufw allow ssh
-sudo ufw allow http
-sudo ufw allow https
-sudo ufw allow 11434  # Ollama (if external access needed)
-```
-
-#### Application Security
-
+**config/config.py:**
 ```python
-# In config.py
-SECURITY_SETTINGS = {
-    "enable_rate_limiting": True,
-    "max_requests_per_minute": 60,
-    "enable_csrf_protection": True,
-    "secure_session_cookies": True,
-    "force_https": True,
-    "content_security_policy": True
-}
+import os
+from pathlib import Path
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
+# Paths
+BASE_DIR = Path(__file__).parent.parent
+DATA_DIR = BASE_DIR / "data"
+NOTES_DIR = DATA_DIR / "notes"
+MEMORIES_DIR = DATA_DIR / "memories"
+NIPPO_DIR = DATA_DIR / "nippo"
+CHAT_LOGS_DIR = DATA_DIR / "chat_logs"
+LOGS_DIR = BASE_DIR / "logs"
+DB_PATH = DATA_DIR / "anc_db.json"
+
+# API Configuration
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-pro")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma3:4b")
+
+# Application Settings
+DEBUG = os.getenv("DEBUG", "False").lower() == "true"
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+MAX_WORKERS = int(os.getenv("MAX_WORKERS", "4"))
+
+# AI Analysis Settings
+MAX_HISTORY_CHARS = 4000
+MAX_MEMORY_CHARS = 2000
+
+# Ensure directories exist
+for directory in [DATA_DIR, NOTES_DIR, MEMORIES_DIR, NIPPO_DIR,
+                  CHAT_LOGS_DIR, LOGS_DIR]:
+    directory.mkdir(parents=True, exist_ok=True)
 ```
 
-### 📊 Monitoring and Logging
+## Post-Deployment
 
-#### Log Management
+### 1. Health Checks
 
-```bash
-# Logrotate configuration
-sudo cat > /etc/logrotate.d/project-anc << EOF
-/opt/project-anc/logs/*.log {
-    daily
-    missingok
-    rotate 30
-    compress
-    delaycompress
-    notifempty
-    create 644 project-anc project-anc
-    postrotate
-        systemctl reload project-anc
-    endscript
-}
-EOF
-```
+Create health check script:
 
-
-
-#### Prometheus Metrics (Optional)
-
+**scripts/health_check.py:**
 ```python
-# In main.py, add metrics endpoint
-from prometheus_client import Counter, Histogram, generate_latest
+import sys
+import requests
+from pathlib import Path
 
-REQUEST_COUNT = Counter('project_anc_requests_total', 'Total requests')
-REQUEST_DURATION = Histogram('project_anc_request_duration_seconds', 'Request duration')
+def check_health():
+    checks = []
 
-@app.route('/metrics')
-def metrics():
-    return generate_latest()
+    # Check directories exist
+    required_dirs = ['data/notes', 'data/memories', 'logs']
+    for dir_path in required_dirs:
+        exists = Path(dir_path).exists()
+        checks.append(('Directory: ' + dir_path, exists))
+
+    # Check Ollama
+    try:
+        response = requests.get('http://localhost:11434/api/tags')
+        ollama_ok = response.status_code == 200
+    except:
+        ollama_ok = False
+    checks.append(('Ollama API', ollama_ok))
+
+    # Check environment variables
+    import os
+    api_key = os.getenv('GEMINI_API_KEY') is not None
+    checks.append(('GEMINI_API_KEY', api_key))
+
+    # Print results
+    all_ok = True
+    for check, result in checks:
+        status = '✓' if result else '✗'
+        print(f"{status} {check}")
+        if not result:
+            all_ok = False
+
+    return 0 if all_ok else 1
+
+if __name__ == '__main__':
+    sys.exit(check_health())
 ```
 
-### 🔄 Backup and Recovery
+Run health check:
+```bash
+python scripts/health_check.py
+```
 
-#### Automated Backup Script
+### 2. Monitoring
 
+**Monitor logs:**
+```bash
+# Watch application logs
+tail -f logs/app.log.*
+
+# Watch error logs
+tail -f logs/errors.log.*
+
+# Check plugin loading
+grep "PluginManager" logs/app.log.* | tail -20
+```
+
+**Monitor system resources:**
+```bash
+# CPU and memory usage
+top -p $(pgrep -f "python app/main.py")
+
+# Disk usage
+df -h
+du -sh data/ logs/
+```
+
+### 3. Backup Strategy
+
+**Backup script:**
+
+**scripts/backup.sh:**
 ```bash
 #!/bin/bash
-# backup.sh
 
-BACKUP_DIR="/opt/backups/project-anc"
+BACKUP_DIR="/backups/project-anc"
 DATE=$(date +%Y%m%d_%H%M%S)
+BACKUP_FILE="$BACKUP_DIR/backup_$DATE.tar.gz"
 
 # Create backup directory
-mkdir -p $BACKUP_DIR
+mkdir -p "$BACKUP_DIR"
 
-# Backup database
-cp /opt/project-anc/data/anc_db.json $BACKUP_DIR/anc_db_$DATE.json
+# Backup data and logs
+tar -czf "$BACKUP_FILE" \
+    data/ \
+    logs/ \
+    .env
 
-# Backup notes
-tar -czf $BACKUP_DIR/notes_$DATE.tar.gz /opt/project-anc/data/notes/
+# Keep only last 30 days of backups
+find "$BACKUP_DIR" -name "backup_*.tar.gz" -mtime +30 -delete
 
-# Backup configuration
-cp /opt/project-anc/config.py $BACKUP_DIR/config_$DATE.py
-
-# Clean old backups (keep 30 days)
-find $BACKUP_DIR -name "*.json" -mtime +30 -delete
-find $BACKUP_DIR -name "*.tar.gz" -mtime +30 -delete
-
-echo "Backup completed: $DATE"
+echo "Backup created: $BACKUP_FILE"
 ```
 
-#### Cron Job for Automated Backups
-
+**Schedule with cron:**
 ```bash
-# Add to crontab
-0 2 * * * /opt/project-anc/scripts/backup.sh >> /var/log/project-anc-backup.log 2>&1
+# Run daily at 2 AM
+0 2 * * * /opt/project-anc/scripts/backup.sh
 ```
 
-#### Recovery Procedure
+### 4. Performance Tuning
 
+**Optimize Python:**
 ```bash
-# 1. Stop service
-sudo systemctl stop project-anc
-
-# 2. Restore database
-cp /opt/backups/project-anc/anc_db_YYYYMMDD_HHMMSS.json /opt/project-anc/data/anc_db.json
-
-# 3. Restore notes
-tar -xzf /opt/backups/project-anc/notes_YYYYMMDD_HHMMSS.tar.gz -C /
-
-# 4. Restore configuration
-cp /opt/backups/project-anc/config_YYYYMMDD_HHMMSS.py /opt/project-anc/config.py
-
-# 5. Start service
-sudo systemctl start project-anc
+# Use optimized Python
+python -O app/main.py
 ```
 
-### 🚀 Performance Optimization
+**Increase workers:**
+```bash
+# .env
+MAX_WORKERS=8  # Increase for more concurrent operations
+```
 
-#### Application Optimization
-
+**Database optimization:**
 ```python
-# In config.py
-PERFORMANCE_SETTINGS = {
-    "enable_caching": True,
-    "cache_ttl": 300,  # 5 minutes
-    "enable_compression": True,
-    "max_concurrent_ai_requests": 2,
-    "database_connection_pool": 5
-}
+# config/config.py
+# Use in-memory caching
+ENABLE_CACHING = True
+CACHE_SIZE = 1000
 ```
 
-#### System Optimization
+## Troubleshooting
+
+### Application Won't Start
+
+**Check Python version:**
+```bash
+python --version  # Must be 3.12+
+```
+
+**Check dependencies:**
+```bash
+pip list
+pip check
+```
+
+**Check logs:**
+```bash
+tail -100 logs/app.log.*
+tail -100 logs/errors.log.*
+```
+
+### Plugin Discovery Issues
+
+**Verify plugin directory:**
+```bash
+ls -la app/ai_analysis/plugins/
+```
+
+**Check for import errors:**
+```bash
+python -c "from ai_analysis.plugins.tagging_plugin import TaggingPlugin; print('OK')"
+```
+
+**Check logs:**
+```bash
+grep "PluginManager" logs/app.log.* | tail -20
+```
+
+### Ollama Connection Errors
+
+**Check Ollama is running:**
+```bash
+curl http://localhost:11434/api/tags
+```
+
+**Check model installed:**
+```bash
+ollama list
+```
+
+**Pull model if missing:**
+```bash
+ollama pull gemma3:4b
+```
+
+### Gemini API Errors
+
+**Verify API key:**
+```bash
+echo $GEMINI_API_KEY
+```
+
+**Test API key:**
+```bash
+python -c "
+import os
+from google import generativeai as genai
+genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
+print('API key valid')
+"
+```
+
+### Performance Issues
+
+**Check system resources:**
+```bash
+top
+free -h
+df -h
+```
+
+**Reduce workers:**
+```bash
+# .env
+MAX_WORKERS=2
+```
+
+**Enable profiling:**
+```bash
+# .env
+ENABLE_PROFILING=true
+```
+
+### Database Issues
+
+**Backup database:**
+```bash
+cp data/anc_db.json data/anc_db.json.backup
+```
+
+**Reset database:**
+```bash
+rm data/anc_db.json
+# Restart application to create new database
+```
+
+## Security Considerations
+
+### 1. API Key Protection
 
 ```bash
-# Increase file descriptor limits
-echo "* soft nofile 65536" >> /etc/security/limits.conf
-echo "* hard nofile 65536" >> /etc/security/limits.conf
+# Never commit .env to git
+echo ".env" >> .gitignore
 
-# Optimize Python
-export PYTHONOPTIMIZE=1
-export PYTHONDONTWRITEBYTECODE=1
-
-# Memory optimization
-echo 'vm.swappiness=10' >> /etc/sysctl.conf
+# Set restrictive permissions
+chmod 600 .env
 ```
 
-### 📱 Multi-Instance Deployment
-
-#### Load Balancer Configuration
-
-```nginx
-upstream project_anc {
-    server 127.0.0.1:8080;
-    server 127.0.0.1:8081;
-    server 127.0.0.1:8082;
-}
-
-server {
-    listen 80;
-    location / {
-        proxy_pass http://project_anc;
-    }
-}
-```
-
-#### Shared Storage Setup
+### 2. File Permissions
 
 ```bash
-# NFS setup for shared notes directory
-sudo apt install nfs-kernel-server
-echo "/opt/project-anc/data 192.168.1.0/24(rw,sync,no_subtree_check)" >> /etc/exports
-sudo systemctl restart nfs-kernel-server
+# Restrict data directory
+chmod 700 data/
+chmod 700 logs/
+
+# Restrict config files
+chmod 600 .env
+chmod 600 config/config.py
 ```
 
-### 🧪 Staging Environment
+### 3. Network Security
 
-#### Staging Configuration
+- Run on localhost only by default
+- Use firewall rules to restrict access
+- Consider VPN for remote access
 
-```python
-# config_staging.py
-STAGING_MODE = True
-DEBUG_MODE = True
-NOTES_DIR = "/opt/project-anc-staging/data/notes"
-DATABASE_PATH = "/opt/project-anc-staging/data/anc_db.json"
-OLLAMA_MODEL = "gemma2:2b"  # Smaller model for faster testing
+### 4. Update Dependencies
+
+```bash
+# Check for vulnerabilities
+pip list --outdated
+
+# Update packages
+pip install --upgrade -r requirements.txt
 ```
 
-#### CI/CD Pipeline (.github/workflows/deploy.yml)
+---
 
-```yaml
-name: Deploy to Production
-
-on:
-  push:
-    branches: [main]
-
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v2
-    - name: Set up Python
-      uses: actions/setup-python@v2
-      with:
-        python-version: '3.12'
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-    - name: Run tests
-      run: |
-        python test_basic_integration.py
-        python test_working_components.py
-
-  deploy:
-    needs: test
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
-    steps:
-    - name: Deploy to production
-      run: |
-        ssh ${{ secrets.PROD_HOST }} "cd /opt/project-anc && git pull && systemctl restart project-anc"
-```
-
-### 📋 Production Checklist
-
-Before deploying to production:
-
-- [ ] All tests passing
-- [ ] Configuration reviewed and updated
-- [ ] SSL certificates configured
-- [ ] Firewall rules in place
-- [ ] Backup system configured
-- [ ] Monitoring setup complete
-- [ ] Log rotation configured
-- [ ] Performance testing completed
-- [ ] Security scan performed
-- [ ] Documentation updated
-- [ ] Rollback plan prepared
-
-### 🆘 Troubleshooting Production Issues
-
-#### Common Production Issues
-
-1. **High Memory Usage**
-   - Monitor with `htop` or `ps aux`
-   - Check for memory leaks in logs
-   - Restart service if necessary
-
-2. **AI Service Unresponsive**
-   - Check Ollama status: `systemctl status ollama`
-   - Restart Ollama: `systemctl restart ollama`
-   - Check GPU/CPU resources
-
-3. **Database Corruption**
-   - Stop service immediately
-   - Restore from latest backup
-   - Check file system integrity
-
-4. **Network Issues**
-   - Check firewall rules
-   - Verify SSL certificate validity
-   - Test DNS resolution
-
-Remember: Always test deployments in staging environment first, maintain regular backups, and have a rollback plan ready.
+**Version:** 3.0.0
+**Last Updated:** October 1, 2025
+**Maintained By:** Project A.N.C. Team

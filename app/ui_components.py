@@ -5,7 +5,7 @@ and maintain consistency across the application.
 """
 
 import flet as ft
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Callable, Optional, Dict, Any
 
 
@@ -30,7 +30,7 @@ class DatePickerButton(ft.Container):
         # Date picker dialog
         self.date_picker = ft.DatePicker(
             first_date=datetime(2020, 1, 1),
-            last_date=datetime.now() + ft.datetime.timedelta(days=365),
+            last_date=datetime.now() + timedelta(days=365),
             on_change=self._handle_date_change
         )
 

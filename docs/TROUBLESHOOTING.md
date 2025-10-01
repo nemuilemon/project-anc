@@ -1,346 +1,850 @@
 # Troubleshooting Guide
 
-## Common Issues and Solutions
+**Version:** 3.0.0
+**Last Updated:** October 1, 2025
 
-### 🔥 Critical Issues
+## Table of Contents
 
-#### Application Won't Start
+1. [Common Issues](#common-issues)
+2. [Installation Problems](#installation-problems)
+3. [Runtime Errors](#runtime-errors)
+4. [Plugin Issues](#plugin-issues)
+5. [Alice Chat Problems](#alice-chat-problems)
+6. [Performance Issues](#performance-issues)
+7. [Database Issues](#database-issues)
+8. [UI Issues](#ui-issues)
+9. [Getting Help](#getting-help)
 
-**Error: "ModuleNotFoundError"**
+## Common Issues
+
+### Application Won't Start
+
+#### Symptom
+```
+Error: No module named 'flet'
+```
+
+#### Solution
 ```bash
-# Solution: Install dependencies
-source .venv/bin/activate  # or .venv\Scripts\activate on Windows
+# Activate virtual environment
+source .venv/bin/activate  # macOS/Linux
+.venv\Scripts\activate     # Windows
+
+# Install dependencies
 pip install -r requirements.txt
 ```
 
-**Error: "Permission denied"**
-```bash
-# Solution: Check file permissions
-chmod +x main.py
-# Or run with python explicitly
-python main.py
+---
+
+#### Symptom
+```
+Error: Python version 3.12 or higher required
 ```
 
-#### Database Issues
-
-**Error: "Could not create database"**
-- Check write permissions in project directory
-- Ensure `notes` directory exists and is writable
-- Verify no other processes are using `anc_db.json`
-
-**Error: "Database corrupted"**
+#### Solution
 ```bash
-# Backup and recreate database
-cp anc_db.json anc_db.json.backup
-rm anc_db.json
-# Restart application to recreate clean database
+# Check Python version
+python --version
+
+# Install Python 3.12+ from python.org
+# Create new virtual environment with correct version
+python3.12 -m venv .venv
 ```
 
-### 🤖 AI Analysis Issues
+---
 
-#### Ollama Connection Problems
+#### Symptom
+Application window opens but immediately closes
 
-**Error: "Failed to connect to Ollama"**
+#### Solution
 ```bash
-# Check if Ollama is running
-ollama list
+# Run from command line to see errors
+python app/main.py
 
-# If not running, start it
-ollama serve
-
-# If not installed, install from https://ollama.com/download
+# Check logs
+tail -f logs/app.log.*
+tail -f logs/errors.log.*
 ```
 
-**Error: "Model not found"**
-```bash
-# Pull the required model
-ollama pull llama3.1:8b
+---
 
-# Or check available models
-ollama list
+### Import Errors
 
-# Update config.py if using different model
-OLLAMA_MODEL = "your-model-name"
+#### Symptom
+```
+ModuleNotFoundError: No module named 'app'
 ```
 
-#### AI Analysis Fails Silently
+#### Solution
+```bash
+# Ensure you're in project root
+cd /path/to/project-anc
 
-**Check these items:**
-1. Ollama service is running: `ollama serve`
-2. Model is available: `ollama list`
-3. Content is not empty or too short
-4. Check error logs in `logs/errors.log`
+# Run with correct path
+python app/main.py
 
-**Enable debug logging:**
-```python
-# In config.py, add:
-DEBUG_MODE = True
-LOG_LEVEL = "DEBUG"
+# Or add to PYTHONPATH
+export PYTHONPATH="${PYTHONPATH}:$(pwd)"  # Linux/macOS
+set PYTHONPATH=%PYTHONPATH%;%CD%          # Windows
 ```
 
-#### Long AI Processing Times
+---
 
-**Normal processing times:**
-- Tagging: 2-5 seconds
-- Summarization: 3-8 seconds  
-- Sentiment: 2-4 seconds
+#### Symptom
+```
+ImportError: cannot import name 'AppState' from 'app.state_manager'
+```
 
-**If taking longer than 30 seconds:**
-- Check system resources (CPU/Memory)
-- Try smaller content chunks
-- Consider using faster model (e.g., gemma2:2b)
-- Check Ollama logs: `ollama logs`
-
-### 📁 File Management Issues
-
-#### Files Not Appearing
-
-**Check these items:**
-1. Files are in correct directory (`notes/` by default)
-2. Files have allowed extensions (`.md`, `.txt`)
-3. Files are not in `.archive` subdirectory (unless showing archived files)
-4. Refresh the file list (Ctrl+R or restart app)
-
-#### Cannot Save Files
-
-**Error: "Permission denied"**
-- Check write permissions on `notes` directory
-- Ensure file is not locked by another application
-- Check available disk space
-
-**Error: "File name invalid"**
-- Avoid special characters: `< > : " | ? * /`
-- Don't use reserved names: `CON`, `PRN`, `AUX`, etc.
-- Keep filename length under 250 characters
-
-#### Search Not Working
-
-**If search returns no results:**
-- Check search term spelling
-- Try partial matches instead of exact phrases
-- Clear search and try again
-- Restart application to refresh file index
-
-### 🎨 UI Issues
-
-#### Interface Elements Missing
-
-**Dropdown menus not showing:**
-- Check window size (resize to larger)
-- Try switching tabs or refreshing
-- Check for console errors (F12 in debug mode)
-
-**Buttons not responding:**
-- Wait for any ongoing operations to complete
-- Check progress indicators
-- Try clicking different areas of the button
-
-#### Text Not Displaying Properly
-
-**Encoding issues:**
-- Ensure files are saved as UTF-8
-- Check content language settings
-- Verify system font support for characters used
-
-### ⚡ Performance Issues
-
-#### Slow Startup
-
-**Application takes >10 seconds to start:**
-- Check file count in `notes` directory (limit: ~1000 files)
-- Scan for very large files (limit: 10MB per file)
-- Check available system memory
-- Consider archiving old files
-
-#### High Memory Usage
-
-**Application using >500MB RAM:**
-- Check for memory leaks in error logs
-- Restart application periodically
-- Reduce number of open tabs
-- Archive unused files
-
-### 🔒 Security Issues
-
-#### Path-Related Errors
-
-**Error: "Path not allowed"**
-- Ensure files are within allowed directories
-- Check `ALLOWED_DIRS` in config.py
-- Avoid using absolute paths or `../` patterns
-
-**Error: "Filename contains invalid characters"**
-- Remove special characters from filenames
-- Use alphanumeric characters and basic punctuation
-- Check filename length (<250 characters)
-
-### 🧪 Testing Issues
-
-#### Tests Failing
-
-**Virtual environment tests fail:**
+#### Solution
 ```bash
-# Ensure virtual environment is clean
+# Check file exists
+ls app/state_manager.py
+
+# Check for syntax errors
+python -m py_compile app/state_manager.py
+
+# Reinstall if corrupted
+git checkout app/state_manager.py
+```
+
+## Installation Problems
+
+### pip Install Fails
+
+#### Symptom
+```
+ERROR: Could not find a version that satisfies the requirement flet>=0.28.0
+```
+
+#### Solution
+```bash
+# Update pip
+python -m pip install --upgrade pip
+
+# Try installing again
+pip install -r requirements.txt
+
+# Or install packages individually
+pip install flet tinydb ollama google-generativeai python-dotenv
+```
+
+---
+
+### Virtual Environment Issues
+
+#### Symptom
+Cannot activate virtual environment
+
+#### Solution
+
+**Windows:**
+```bash
+# Enable script execution
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+
+# Or use cmd instead of PowerShell
+.venv\Scripts\activate.bat
+```
+
+**Linux/macOS:**
+```bash
+# Check permissions
+chmod +x .venv/bin/activate
+
+# Source the script
+source .venv/bin/activate
+```
+
+---
+
+### Dependency Conflicts
+
+#### Symptom
+```
+ERROR: pip's dependency resolver does not currently take into account all packages
+```
+
+#### Solution
+```bash
+# Create fresh virtual environment
 rm -rf .venv
 python -m venv .venv
 source .venv/bin/activate
+
+# Install requirements
+pip install --upgrade pip
 pip install -r requirements.txt
-python test_basic_integration.py
+
+# Check for conflicts
+pip check
 ```
 
-**Import errors in tests:**
+## Runtime Errors
+
+### Gemini API Key Not Found
+
+#### Symptom
+```
+Error: GEMINI_API_KEY not found in environment
+```
+
+#### Solution
 ```bash
-# Check Python path
-echo $PYTHONPATH
+# Create .env file
+echo "GEMINI_API_KEY=your_key_here" > .env
 
-# Run from project root directory
-cd /path/to/project-anc
-python test_basic_integration.py
+# Or set environment variable
+export GEMINI_API_KEY="your_key_here"  # Linux/macOS
+set GEMINI_API_KEY=your_key_here       # Windows cmd
+$env:GEMINI_API_KEY="your_key_here"    # Windows PowerShell
+
+# Verify
+python -c "import os; print(os.getenv('GEMINI_API_KEY'))"
 ```
 
-### 🔌 Plugin Development Issues
+---
 
-#### Plugin Not Loading
+### Permission Denied Errors
 
-**Error: "Plugin not found"**
-- Check plugin file location: `ai_analysis/plugins/`
-- Verify plugin class name matches file name
-- Ensure plugin is registered in `__init__.py`
-- Check for syntax errors: `python -c "from ai_analysis.plugins.your_plugin import YourPlugin"`
-
-#### Plugin Analysis Fails
-
-**Common issues:**
-- Plugin `analyze()` method not implemented
-- Missing required parameters
-- Error in custom analysis logic
-- Check plugin logs in error log files
-
-### 📱 Platform-Specific Issues
-
-#### Windows Issues
-
-**Error: "Cannot execute .bat file"**
-```cmd
-# Use Command Prompt instead of PowerShell
-cmd.exe
-test_in_venv.bat
+#### Symptom
+```
+PermissionError: [Errno 13] Permission denied: 'data/notes/test.txt'
 ```
 
-**Path separator issues:**
-- Use forward slashes `/` or `os.path.join()`
-- Avoid hardcoded backslashes `\`
-
-#### macOS Issues
-
-**Error: "Permission denied" on startup**
+#### Solution
 ```bash
-# Grant permissions
-chmod +x main.py
-xattr -dr com.apple.quarantine /path/to/project-anc
+# Fix directory permissions
+chmod -R 755 data/
+chmod -R 755 logs/
+
+# Check ownership
+ls -la data/
+
+# Change ownership if needed (Linux/macOS)
+sudo chown -R $USER:$USER data/ logs/
 ```
 
-#### Linux Issues
+---
 
-**Missing dependencies:**
+### File Not Found Errors
+
+#### Symptom
+```
+FileNotFoundError: [Errno 2] No such file or directory: 'data/notes/0-System-Prompt.md'
+```
+
+#### Solution
 ```bash
-# Install system dependencies
-sudo apt-get update
-sudo apt-get install python3-tk python3-dev
+# Create missing directories
+mkdir -p data/notes data/memories data/nippo data/chat_logs logs
 
-# For some distributions, install additional packages
-sudo apt-get install python3-pip python3-venv
+# Create system files
+cat > data/notes/0-System-Prompt.md << EOF
+# Alice System Prompt
+You are Alice, a helpful AI assistant.
+EOF
+
+cat > data/notes/0-Memory.md << EOF
+# Alice's Long-Term Memory
+EOF
+
+# Or restore from backup
+git checkout data/notes/
 ```
 
-## 🆘 Getting Help
+## Plugin Issues
 
-### Debug Information to Collect
+### Plugins Not Discovered
 
-When reporting issues, include:
+#### Symptom
+```
+[INFO] PluginManager: Discovered 0 plugins
+```
 
-1. **System Information:**
-   - Operating System and version
-   - Python version: `python --version`
-   - Flet version: `pip list | grep flet`
+#### Solution
+```bash
+# Check plugin directory exists
+ls -la app/ai_analysis/plugins/
 
-2. **Application Information:**
-   - Project A.N.C. version
-   - Error message (exact text)
-   - Steps to reproduce
+# Check for __init__.py
+touch app/ai_analysis/plugins/__init__.py
 
-3. **Log Files:**
-   - `logs/errors.log` (if exists)
-   - `logs/app.log` (recent entries)
-   - Console output
+# Verify plugin files
+ls app/ai_analysis/plugins/*.py
 
-4. **Configuration:**
-   - `config.py` settings (remove sensitive data)
-   - Ollama version: `ollama version`
-   - Available models: `ollama list`
+# Check plugin syntax
+python -m py_compile app/ai_analysis/plugins/tagging_plugin.py
 
-### Enabling Debug Mode
+# Check logs for import errors
+grep "PluginManager" logs/errors.log.*
+```
 
+---
+
+### Plugin Import Errors
+
+#### Symptom
+```
+[ERROR] Failed to load plugin: tagging_plugin
+ImportError: cannot import name 'BaseAnalysisPlugin'
+```
+
+#### Solution
+```bash
+# Check base plugin exists
+ls app/ai_analysis/base_plugin.py
+
+# Verify import path
+python -c "from ai_analysis.base_plugin import BaseAnalysisPlugin; print('OK')"
+
+# Check for circular imports
+python -c "from ai_analysis.plugins.tagging_plugin import TaggingPlugin; print('OK')"
+
+# Reinstall if corrupted
+git checkout app/ai_analysis/
+```
+
+---
+
+### Plugin Analysis Fails
+
+#### Symptom
+```
+Analysis failed: Ollama connection error
+```
+
+#### Solution
+```bash
+# Check Ollama is running
+curl http://localhost:11434/api/tags
+
+# Start Ollama if not running
+ollama serve
+
+# Check model is installed
+ollama list
+
+# Pull model if missing
+ollama pull gemma3:4b
+
+# Test Ollama
+ollama run gemma3:4b "Hello"
+```
+
+---
+
+### Custom Plugin Not Working
+
+#### Symptom
+Custom plugin file created but not showing in UI
+
+#### Checklist
+
+- [ ] File is in `app/ai_analysis/plugins/` directory
+- [ ] Filename ends with `.py`
+- [ ] Class inherits from `BaseAnalysisPlugin`
+- [ ] `__init__()` calls `super().__init__()`
+- [ ] `analyze()` method implemented
+- [ ] `analyze_async()` method implemented
+- [ ] No syntax errors (`python -m py_compile plugin_file.py`)
+- [ ] Application restarted after adding plugin
+
+#### Debug
+```bash
+# Test plugin import
+python -c "
+from ai_analysis.plugins.my_plugin import MyPlugin
+plugin = MyPlugin()
+print(f'Plugin loaded: {plugin.name}')
+result = plugin.analyze('test')
+print(f'Analysis result: {result.success}')
+"
+
+# Check logs
+grep "my_plugin" logs/app.log.*
+```
+
+## Alice Chat Problems
+
+### Alice Not Responding
+
+#### Symptom
+Send message but no response from Alice
+
+#### Solution
+```bash
+# Check API key
+echo $GEMINI_API_KEY
+
+# Test API key
+python -c "
+import os
+from google import generativeai as genai
+genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
+model = genai.GenerativeModel('gemini-2.5-pro')
+response = model.generate_content('Hello')
+print(response.text)
+"
+
+# Check logs
+tail -f logs/alice_chat.log.*
+tail -f logs/errors.log.*
+
+# Check dialog logs
+ls -lt logs/dialogs/ | head -10
+cat logs/dialogs/dialog-*.json | jq .
+```
+
+---
+
+### API Rate Limit Errors
+
+#### Symptom
+```
+Error: 429 Resource has been exhausted (e.g. check quota)
+```
+
+#### Solution
+```bash
+# Check API quota at https://aistudio.google.com/
+
+# Wait for quota reset (usually per minute)
+
+# Implement rate limiting in code
+# config/config.py
+RATE_LIMIT_REQUESTS_PER_MINUTE = 10
+
+# Use exponential backoff for retries
+```
+
+---
+
+### Context Too Large
+
+#### Symptom
+```
+Error: Token limit exceeded
+```
+
+#### Solution
+```bash
+# Reduce context in config/config.py
+MAX_HISTORY_CHARS = 2000  # Reduced from 4000
+MAX_MEMORY_CHARS = 1000   # Reduced from 2000
+
+# Clear conversation history
+# Use "Clear" button in UI
+
+# Reduce 0-Memory.md size
+# Edit data/notes/0-Memory.md
+```
+
+---
+
+### System Prompt Not Loading
+
+#### Symptom
+Alice behaves differently than expected
+
+#### Solution
+```bash
+# Check system prompt file
+cat data/notes/0-System-Prompt.md
+
+# Verify file encoding (should be UTF-8)
+file data/notes/0-System-Prompt.md
+
+# Check file permissions
+ls -l data/notes/0-System-Prompt.md
+
+# Check logs for loading errors
+grep "System.*Prompt" logs/alice_chat.log.*
+
+# Recreate from template
+cat > data/notes/0-System-Prompt.md << 'EOF'
+# Alice System Prompt
+
+You are Alice, an intelligent and helpful AI assistant.
+
+## Personality
+- Friendly and approachable
+- Clear and concise
+- Helpful and informative
+
+## Guidelines
+- Always be respectful
+- Provide accurate information
+- Ask for clarification when needed
+EOF
+```
+
+## Performance Issues
+
+### Slow Startup
+
+#### Symptom
+Application takes >10 seconds to start
+
+#### Solution
+```bash
+# Check plugin discovery time
+grep "PluginManager" logs/performance.log.*
+
+# Disable unused plugins temporarily
+# Move plugins out of plugins/ directory
+
+# Check database size
+ls -lh data/anc_db.json
+
+# Optimize database if large
+# Backup and recreate database
+
+# Check for network delays
+# Verify Ollama and Gemini API connectivity
+```
+
+---
+
+### High Memory Usage
+
+#### Symptom
+Application uses >500MB RAM
+
+#### Solution
+```bash
+# Check memory usage
+top -p $(pgrep -f "python app/main.py")
+
+# Reduce workers in .env
+MAX_WORKERS=2
+
+# Clear conversation history regularly
+
+# Check for memory leaks
+# Run with memory profiler
+pip install memory_profiler
+python -m memory_profiler app/main.py
+```
+
+---
+
+### Slow Analysis
+
+#### Symptom
+AI analysis takes very long (>30 seconds)
+
+#### Solution
+```bash
+# Check Ollama model size
+ollama list
+
+# Use smaller model
+ollama pull gemma3:4b  # Smaller than 8b or 9b
+
+# Check Ollama performance
+time ollama run gemma3:4b "Test"
+
+# Increase timeout
+# In plugin: self.timeout_seconds = 120
+
+# Check system resources
+top
+free -h
+df -h
+```
+
+---
+
+### UI Freezing
+
+#### Symptom
+UI becomes unresponsive during operations
+
+#### Solution
+```bash
+# Ensure async operations are used
+# Check async_operations.py integration
+
+# Increase async workers
+# .env: MAX_WORKERS=4
+
+# Use progress callbacks
+# All long operations should use progress_callback
+
+# Check logs for blocking operations
+grep "WARN" logs/performance.log.*
+```
+
+## Database Issues
+
+### Database Corrupted
+
+#### Symptom
+```
+json.decoder.JSONDecodeError: Expecting value
+```
+
+#### Solution
+```bash
+# Backup corrupted database
+cp data/anc_db.json data/anc_db.json.backup
+
+# Try to repair JSON
+python -c "
+import json
+with open('data/anc_db.json', 'r') as f:
+    data = json.load(f)  # This will show where corruption is
+"
+
+# If repair fails, restore from backup
+cp data/anc_db.json.backup data/anc_db.json
+
+# Or create fresh database
+rm data/anc_db.json
+# Restart application
+```
+
+---
+
+### Database Lock
+
+#### Symptom
+```
+Error: Database is locked
+```
+
+#### Solution
+```bash
+# Check for multiple instances
+ps aux | grep "python app/main.py"
+
+# Kill duplicate instances
+pkill -f "python app/main.py"
+
+# Wait a moment, then restart
+sleep 2
+python app/main.py
+```
+
+---
+
+### Missing Records
+
+#### Symptom
+Files exist but not showing in database
+
+#### Solution
+```bash
+# Refresh database
+# Use "Refresh Files" button in UI
+
+# Or rebuild database
+python -c "
+from app.logic import AppLogic
+from app.state_manager import AppState
+logic = AppLogic(AppState())
+logic.refresh_all_files()
+"
+
+# Check database content
+python -c "
+from tinydb import TinyDB
+db = TinyDB('data/anc_db.json')
+print(f'Total records: {len(db.all())}')
+for record in db.all()[:5]:
+    print(record)
+"
+```
+
+## UI Issues
+
+### Window Won't Open
+
+#### Symptom
+No window appears when starting application
+
+#### Solution
+```bash
+# Check Flet version
+pip show flet
+
+# Update Flet
+pip install --upgrade flet
+
+# Check display environment (Linux)
+echo $DISPLAY
+export DISPLAY=:0
+
+# Check logs
+tail -f logs/ui_events.log.*
+```
+
+---
+
+### UI Elements Not Updating
+
+#### Symptom
+Changes not reflected in UI
+
+#### Solution
 ```python
-# In config.py, add these lines:
-DEBUG_MODE = True
-LOG_LEVEL = "DEBUG"
-VERBOSE_ERRORS = True
+# Ensure update() is called
+component.update()
 
-# Run application with debug output
-python main.py --debug
+# Check observer registration
+app_state.add_observer("event_type", callback)
+
+# Force page update
+page.update()
+
+# Check logs for observer errors
+grep "Observer" logs/errors.log.*
 ```
 
-### Log Analysis
+---
 
-**Check these log files for clues:**
-- `logs/errors.log` - Application errors and exceptions
-- `logs/app.log` - General application events
-- `logs/performance.log` - Performance metrics and timing
-- `logs/ui_events.log` - User interface events
-- `logs/security.log` - Security-related events
+### UI Layout Broken
 
-### Emergency Recovery
+#### Symptom
+UI elements overlapping or misaligned
 
-**If application completely broken:**
+#### Solution
 ```bash
-# 1. Backup your data
-cp -r notes/ notes_backup/
-cp anc_db.json anc_db.json.backup
+# Clear cache and restart
+rm -rf .flet/
+python app/main.py
 
-# 2. Clean installation
-rm -rf .venv/
-rm anc_db.json
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+# Check Flet version compatibility
+pip install flet==0.28.0
 
-# 3. Restart application
-python main.py
-
-# 4. If needed, restore notes manually
+# Update UI components
+git checkout app/ui_components.py
+git checkout app/ui_redesign.py
 ```
 
-### Community Support
+## Getting Help
 
-- **GitHub Issues**: Report bugs and feature requests
-- **Documentation**: Check all docs/ files for detailed info
-- **Plugin Examples**: See existing plugins for reference implementations
-- **Testing**: Run test suite to validate installation
+### Before Asking for Help
 
-### Still Having Issues?
+Please gather this information:
 
-If none of these solutions work:
+1. **System Information**
+   ```bash
+   python --version
+   pip list
+   uname -a  # Linux/macOS
+   ver       # Windows
+   ```
 
-1. Create a [GitHub Issue](https://github.com/your-repo/issues) with:
-   - Detailed problem description
+2. **Error Logs**
+   ```bash
+   tail -100 logs/errors.log.* > error_log.txt
+   tail -100 logs/app.log.* > app_log.txt
+   ```
+
+3. **Configuration**
+   ```bash
+   # Redact sensitive information!
+   cat .env | sed 's/GEMINI_API_KEY=.*/GEMINI_API_KEY=***/' > config.txt
+   ```
+
+4. **Steps to Reproduce**
+   - What were you doing?
+   - What did you expect to happen?
+   - What actually happened?
+
+### Where to Get Help
+
+1. **Documentation**
+   - Read relevant docs in `docs/` directory
+   - Check [SYSTEM_OVERVIEW.md](./SYSTEM_OVERVIEW.md)
+   - Review [API_REFERENCE.md](./API_REFERENCE.md)
+
+2. **GitHub Issues**
+   - Search existing issues: https://github.com/yourusername/project-anc/issues
+   - Create new issue with template
+   - Provide all information from "Before Asking for Help"
+
+3. **Debug Mode**
+   ```bash
+   # Enable debug logging
+   export ANC_DEBUG=1  # Linux/macOS
+   set ANC_DEBUG=1     # Windows
+
+   # Run application
+   python app/main.py
+
+   # Check detailed logs
+   tail -f logs/app.log.*
+   ```
+
+4. **Community**
+   - Check discussions
+   - Review pull requests for similar issues
+   - Join community chat (if available)
+
+### Creating a Bug Report
+
+Include:
+
+1. **Environment**
+   - OS and version
+   - Python version
+   - Package versions
+   - Project A.N.C. version
+
+2. **Issue Description**
+   - Clear, concise summary
+   - Expected behavior
+   - Actual behavior
    - Steps to reproduce
-   - System information
-   - Error messages and log files
 
-2. Check existing issues for similar problems
+3. **Logs and Screenshots**
+   - Relevant log excerpts
+   - Screenshots if UI issue
+   - Error messages
 
-3. Consider running in a fresh virtual environment
+4. **Attempted Solutions**
+   - What you've tried
+   - Results of troubleshooting steps
 
-4. Try the latest version from the repository
+### Template
 
-Remember: Most issues are related to environment setup, missing dependencies, or configuration problems. The troubleshooting steps above solve 95% of common issues.
+```markdown
+**Environment:**
+- OS: Ubuntu 22.04
+- Python: 3.12.0
+- Project A.N.C.: v3.0.0
+
+**Description:**
+[Clear description of the issue]
+
+**Expected Behavior:**
+[What you expected to happen]
+
+**Actual Behavior:**
+[What actually happened]
+
+**Steps to Reproduce:**
+1. [First step]
+2. [Second step]
+3. [...]
+
+**Logs:**
+```
+[Relevant log excerpts]
+```
+
+**Attempted Solutions:**
+- [What you tried]
+- [Results]
+
+**Additional Context:**
+[Any other relevant information]
+```
+
+---
+
+**Version:** 3.0.0
+**Last Updated:** October 1, 2025
+**Maintained By:** Project A.N.C. Team

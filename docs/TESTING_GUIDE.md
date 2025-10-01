@@ -1,230 +1,873 @@
-# Testing Guide for Project A.N.C. AI Analysis System
+# Testing Guide
+
+**Version:** 3.0.0
+**Last Updated:** October 1, 2025
+
+## Table of Contents
+
+1. [Overview](#overview)
+2. [Testing Philosophy](#testing-philosophy)
+3. [Test Setup](#test-setup)
+4. [Unit Testing](#unit-testing)
+5. [Integration Testing](#integration-testing)
+6. [Plugin Testing](#plugin-testing)
+7. [UI Testing](#ui-testing)
+8. [Running Tests](#running-tests)
+9. [Best Practices](#best-practices)
 
 ## Overview
 
-This guide outlines the testing approach for the modular AI analysis system, emphasizing best practices including virtual environment isolation and comprehensive test coverage.
+This guide covers testing strategies and best practices for Project A.N.C. v3.0.
 
-## Why Virtual Environment Testing?
+### Testing Stack
 
-### 🔍 **Isolation Benefits**
-- **Clean State**: Tests run in isolated environment without interference from system packages
-- **Dependency Verification**: Ensures `requirements.txt` is complete and accurate
-- **Reproducible Results**: Same environment across development, testing, and production
-- **Version Control**: Tests actual package versions specified in requirements
+- **Framework:** pytest
+- **Mocking:** unittest.mock
+- **Coverage:** pytest-cov
+- **Style:** pytest conventions
 
-### 🛡️ **Quality Assurance**
-- **Missing Dependencies**: Catches packages that work due to system installs but aren't in requirements
-- **Version Conflicts**: Prevents conflicts between different project requirements
-- **Production Parity**: Testing environment matches deployment environment
+### Test Structure
 
-## Setup Instructions
+```
+project-anc/
+├── tests/
+│   ├── __init__.py
+│   ├── conftest.py              # Shared fixtures
+│   ├── test_state_manager.py   # State management tests
+│   ├── test_plugin_manager.py  # Plugin discovery tests
+│   ├── test_alice_chat.py      # Alice chat tests
+│   ├── test_async_ops.py       # Async operations tests
+│   ├── test_logic.py            # Business logic tests
+│   ├── test_ui_components.py   # UI component tests
+│   └── plugins/                 # Plugin-specific tests
+│       ├── test_tagging.py
+│       ├── test_summarization.py
+│       └── test_sentiment.py
+```
 
-### 1. Virtual Environment Setup
+## Testing Philosophy
+
+### What to Test
+
+✅ **DO test:**
+- Business logic and algorithms
+- State management operations
+- Plugin discovery and loading
+- API integrations (with mocks)
+- Error handling and edge cases
+- Configuration validation
+
+❌ **DON'T test:**
+- Third-party library internals
+- Flet framework behavior
+- External API implementations
+- Trivial getters/setters without logic
+
+### Test Pyramid
+
+```
+        /\
+       /  \      E2E Tests (Few)
+      /----\     - Full application workflows
+     /      \
+    /--------\   Integration Tests (Some)
+   /          \  - Component interactions
+  /------------\
+ /--------------\ Unit Tests (Many)
+                  - Individual functions/classes
+```
+
+## Test Setup
+
+### Install Test Dependencies
 
 ```bash
-# Create virtual environment (if not exists)
-python -m venv .venv
-
-# Activate virtual environment
-# Windows:
-.venv\Scripts\activate
-# macOS/Linux:
-source .venv/bin/activate
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Verify installation
-pip list
+pip install -r requirements-dev.txt
 ```
 
-### 2. Running Tests in Virtual Environment
-
-#### Quick Integration Test
-```bash
-# Activate venv and run basic integration test
-.venv\Scripts\activate && python test_basic_integration.py
+**requirements-dev.txt:**
+```txt
+pytest>=7.4.0
+pytest-cov>=4.1.0
+pytest-asyncio>=0.21.0
+pytest-mock>=3.11.0
 ```
 
-#### Component Tests
-```bash
-# Run working component tests
-.venv\Scripts\activate && python test_working_components.py
+### Configuration
+
+**pytest.ini:**
+```ini
+[pytest]
+testpaths = tests
+python_files = test_*.py
+python_classes = Test*
+python_functions = test_*
+addopts =
+    -v
+    --strict-markers
+    --cov=app
+    --cov-report=html
+    --cov-report=term-missing
+markers =
+    slow: marks tests as slow
+    integration: marks tests as integration tests
+    unit: marks tests as unit tests
 ```
 
-#### Comprehensive Test Script
-```bash
-# Run the complete test suite
-./test_in_venv.bat
+### Shared Fixtures
+
+**tests/conftest.py:**
+```python
+import pytest
+from app.state_manager import AppState
+from app.plugin_manager import PluginManager
+from app.logic import AppLogic
+import tempfile
+import shutil
+from pathlib import Path
+
+@pytest.fixture
+def app_state():
+    """Create a fresh AppState instance"""
+    state = AppState()
+    yield state
+    # Cleanup if needed
+
+@pytest.fixture
+def plugin_manager():
+    """Create a PluginManager instance"""
+    manager = PluginManager()
+    yield manager
+
+@pytest.fixture
+def temp_dir():
+    """Create a temporary directory for tests"""
+    temp_path = tempfile.mkdtemp()
+    yield Path(temp_path)
+    shutil.rmtree(temp_path)
+
+@pytest.fixture
+def app_logic(app_state):
+    """Create AppLogic with mocked dependencies"""
+    logic = AppLogic(app_state)
+    yield logic
+
+@pytest.fixture
+def sample_content():
+    """Sample content for testing"""
+    return """
+    This is sample content for testing.
+    It has multiple sentences. And some variety.
+    This helps test analysis plugins effectively.
+    """
 ```
 
-## Test Categories
+## Unit Testing
 
-### 1. **Basic Integration Tests** (`test_basic_integration.py`)
+### Testing AppState
 
-Tests core system integration and functionality:
+**tests/test_state_manager.py:**
+```python
+import pytest
+from app.state_manager import AppState
 
-- ✅ **Plugin System**: Base plugin imports and manager functionality
-- ✅ **AppLogic Integration**: AI system initialization with existing logic
-- ✅ **Database Integration**: Temporary database creation and AI function availability
-- ✅ **API Structure**: Analysis call structure and result format
+class TestAppState:
+    def test_add_file(self, app_state):
+        """Test adding a file to state"""
+        app_state.add_file("test.txt", {"name": "test.txt", "type": "text"})
 
-**Expected Output:**
+        files = app_state.get_all_files()
+        assert "test.txt" in files
+        assert files["test.txt"]["name"] == "test.txt"
+
+    def test_remove_file(self, app_state):
+        """Test removing a file from state"""
+        app_state.add_file("test.txt", {"name": "test.txt"})
+        app_state.remove_file("test.txt")
+
+        files = app_state.get_all_files()
+        assert "test.txt" not in files
+
+    def test_update_file_state(self, app_state):
+        """Test updating file state"""
+        app_state.add_file("test.txt", {"name": "test.txt"})
+        app_state.update_file_state("test.txt", {"modified": True})
+
+        state = app_state.get_file_state("test.txt")
+        assert state["modified"] is True
+
+    def test_mark_file_modified(self, app_state):
+        """Test marking file as modified"""
+        app_state.add_file("test.txt", {"name": "test.txt"})
+        app_state.mark_file_modified("test.txt", True)
+
+        state = app_state.get_file_state("test.txt")
+        assert state.get("modified") is True
+
+    def test_conversation_history(self, app_state):
+        """Test conversation history management"""
+        app_state.add_conversation_message("user", "Hello")
+        app_state.add_conversation_message("assistant", "Hi there!")
+
+        history = app_state.get_conversation_history()
+        assert len(history) == 2
+        assert history[0]["role"] == "user"
+        assert history[0]["content"] == "Hello"
+        assert history[1]["role"] == "assistant"
+
+    def test_clear_conversation(self, app_state):
+        """Test clearing conversation history"""
+        app_state.add_conversation_message("user", "Hello")
+        app_state.clear_conversation_history()
+
+        history = app_state.get_conversation_history()
+        assert len(history) == 0
+
+    def test_observer_pattern(self, app_state):
+        """Test observer notifications"""
+        called = []
+
+        def observer(path, state):
+            called.append((path, state))
+
+        app_state.add_observer("file_added", observer)
+        app_state.add_file("test.txt", {"name": "test.txt"})
+
+        assert len(called) == 1
+        assert called[0][0] == "test.txt"
+
+    def test_remove_observer(self, app_state):
+        """Test removing observers"""
+        called = []
+
+        def observer(path, state):
+            called.append(path)
+
+        app_state.add_observer("file_added", observer)
+        app_state.remove_observer("file_added", observer)
+        app_state.add_file("test.txt", {"name": "test.txt"})
+
+        assert len(called) == 0
+
+    def test_thread_safety(self, app_state):
+        """Test thread-safe operations"""
+        import threading
+
+        def add_files():
+            for i in range(100):
+                app_state.add_file(f"file_{i}.txt", {"name": f"file_{i}.txt"})
+
+        threads = [threading.Thread(target=add_files) for _ in range(5)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        files = app_state.get_all_files()
+        assert len(files) == 500  # 100 files * 5 threads
 ```
-[OK] Base plugin imports work
-[OK] AI manager imports work  
-[OK] AI manager instantiation works
-[OK] Available plugins: []
-[OK] AppLogic with AI system initializes successfully
-[OK] AI functions available: 3
-[OK] AI analysis call structure works: True
-[SUCCESS] BASIC INTEGRATION TEST PASSED
+
+### Testing PluginManager
+
+**tests/test_plugin_manager.py:**
+```python
+import pytest
+from app.plugin_manager import PluginManager
+
+class TestPluginManager:
+    def test_discover_plugins(self, plugin_manager):
+        """Test plugin discovery"""
+        plugins = plugin_manager.discover_plugins()
+
+        assert len(plugins) > 0
+        assert "tagging" in plugins
+        assert "summarization" in plugins
+        assert "sentiment_compass" in plugins
+
+    def test_get_plugin_info(self, plugin_manager):
+        """Test retrieving plugin information"""
+        plugin_manager.discover_plugins()
+        info = plugin_manager.get_plugin_info("tagging")
+
+        assert info is not None
+        assert "name" in info
+        assert "description" in info
+        assert "version" in info
+        assert info["name"] == "tagging"
+
+    def test_plugin_info_not_found(self, plugin_manager):
+        """Test getting info for non-existent plugin"""
+        info = plugin_manager.get_plugin_info("nonexistent")
+        assert info is None
+
+    def test_get_available_plugins(self, plugin_manager):
+        """Test getting all available plugins"""
+        plugins = plugin_manager.get_available_plugins()
+        assert len(plugins) > 0
+
+    @pytest.mark.slow
+    def test_reload_plugins(self, plugin_manager):
+        """Test plugin reloading"""
+        initial_count = len(plugin_manager.discover_plugins())
+        new_count = plugin_manager.reload_plugins()
+
+        assert new_count == initial_count
 ```
 
-### 2. **Component Tests** (`test_working_components.py`)
+### Testing AsyncOperations
 
-Unit tests for individual components:
+**tests/test_async_ops.py:**
+```python
+import pytest
+import time
+from app.async_operations import AsyncOperationManager, OperationStatus
 
-- ✅ **BaseAnalysisPlugin Interface**: Data structures and plugin interface
-- ✅ **AIAnalysisManager**: Plugin registration and management
-- ✅ **AppLogic Integration**: AI manager initialization and function availability
-- ✅ **UI Integration Structure**: Handler callback structure
-- ✅ **Backward Compatibility**: Legacy method preservation
+class TestAsyncOperations:
+    @pytest.fixture
+    def async_mgr(self):
+        return AsyncOperationManager()
 
-**Test Coverage:**
-- 5/5 tests passing
-- All core architectural components verified
-- Integration points tested
-- Backward compatibility confirmed
+    def test_run_async_operation(self, async_mgr):
+        """Test running async operation"""
+        def task():
+            time.sleep(0.1)
+            return "result"
 
-### 3. **Requirements Validation**
+        op_id = async_mgr.run_async_operation(task)
+        assert op_id is not None
 
-The virtual environment testing validates our minimal, clean requirements:
+        # Wait for completion
+        time.sleep(0.2)
+        status = async_mgr.get_operation_status(op_id)
+        assert status == OperationStatus.COMPLETED
 
+    def test_operation_with_progress(self, async_mgr):
+        """Test operation with progress callback"""
+        progress_updates = []
+
+        def task(progress_callback=None):
+            if progress_callback:
+                progress_callback(0.5, "Working...")
+            time.sleep(0.1)
+            if progress_callback:
+                progress_callback(1.0, "Done")
+            return "result"
+
+        op_id = async_mgr.run_async_operation(task)
+        time.sleep(0.2)
+
+        progress, message = async_mgr.get_operation_progress(op_id)
+        assert progress >= 0.0
+        assert message is not None
+
+    def test_cancel_operation(self, async_mgr):
+        """Test operation cancellation"""
+        def long_task(cancel_event=None):
+            for i in range(10):
+                if cancel_event and cancel_event.is_set():
+                    return None
+                time.sleep(0.1)
+            return "completed"
+
+        op_id = async_mgr.run_async_operation(long_task)
+        time.sleep(0.2)
+
+        cancelled = async_mgr.cancel_operation(op_id)
+        assert cancelled is True
+
+        time.sleep(0.2)
+        status = async_mgr.get_operation_status(op_id)
+        assert status == OperationStatus.CANCELLED
+
+    def test_operation_error(self, async_mgr):
+        """Test operation error handling"""
+        def failing_task():
+            raise ValueError("Test error")
+
+        op_id = async_mgr.run_async_operation(failing_task)
+        time.sleep(0.2)
+
+        status = async_mgr.get_operation_status(op_id)
+        assert status == OperationStatus.FAILED
 ```
-flet>=0.21.0      # UI framework
-tinydb>=4.8.0     # Lightweight database
-ollama>=0.1.7     # AI integration
+
+## Integration Testing
+
+### Testing AppLogic with Plugins
+
+**tests/test_logic.py:**
+```python
+import pytest
+from app.logic import AppLogic
+from app.state_manager import AppState
+
+class TestAppLogic:
+    @pytest.fixture
+    def app_logic(self, app_state):
+        return AppLogic(app_state)
+
+    def test_get_available_plugins(self, app_logic):
+        """Test retrieving available plugins"""
+        plugins = app_logic.get_available_plugins()
+
+        assert len(plugins) > 0
+        assert any(p['name'] == 'tagging' for p in plugins)
+
+    def test_run_ai_analysis(self, app_logic, sample_content):
+        """Test running AI analysis"""
+        result = app_logic.run_ai_analysis(
+            content=sample_content,
+            analysis_type="tagging"
+        )
+
+        assert result is not None
+        assert 'success' in result
+        assert 'data' in result
+
+    @pytest.mark.integration
+    def test_file_operations(self, app_logic, temp_dir):
+        """Test file CRUD operations"""
+        test_file = temp_dir / "test.txt"
+        content = "Test content"
+
+        # Save file
+        success = app_logic.save_file(str(test_file), content)
+        assert success is True
+
+        # Open file
+        read_content = app_logic.open_file(str(test_file))
+        assert read_content == content
+
+        # Delete file
+        success = app_logic.delete_file(str(test_file))
+        assert success is True
+        assert not test_file.exists()
+
+    @pytest.mark.integration
+    def test_run_ai_analysis_async(self, app_logic, sample_content):
+        """Test async AI analysis"""
+        op_id = app_logic.run_ai_analysis_async(
+            path="test.txt",
+            content=sample_content,
+            analysis_type="tagging"
+        )
+
+        assert op_id is not None
+
+        # Wait for completion
+        import time
+        time.sleep(2)
+
+        # Check results stored in state
+        state = app_logic.app_state.get_file_state("test.txt")
+        assert 'ai_analysis' in state or op_id is not None
 ```
 
-## Test Architecture
+## Plugin Testing
 
-### Production AI Plugin System
+### Testing Analysis Plugins
 
-The AI analysis system now uses real Ollama-powered plugins for production functionality:
+**tests/plugins/test_tagging.py:**
+```python
+import pytest
+from ai_analysis.plugins.tagging_plugin import TaggingPlugin
+
+class TestTaggingPlugin:
+    @pytest.fixture
+    def plugin(self):
+        return TaggingPlugin()
+
+    def test_plugin_initialization(self, plugin):
+        """Test plugin initializes correctly"""
+        assert plugin.name == "tagging"
+        assert plugin.version is not None
+        assert plugin.requires_ollama is True
+
+    def test_analyze_content(self, plugin, sample_content):
+        """Test basic analysis"""
+        result = plugin.analyze(sample_content)
+
+        assert result is not None
+        assert result.plugin_name == "tagging"
+        assert result.processing_time >= 0
+
+    def test_validate_content(self, plugin):
+        """Test content validation"""
+        assert plugin.validate_content("Valid content") is True
+        assert plugin.validate_content("") is False
+        assert plugin.validate_content("   ") is False
+
+    def test_analyze_async(self, plugin, sample_content):
+        """Test async analysis"""
+        progress_calls = []
+
+        def track_progress(percent, message):
+            progress_calls.append((percent, message))
+
+        result = plugin.analyze_async(
+            sample_content,
+            progress_callback=track_progress
+        )
+
+        assert result is not None
+        assert len(progress_calls) > 0
+
+    @pytest.mark.integration
+    def test_analyze_with_ollama(self, plugin):
+        """Test analysis with Ollama (requires Ollama running)"""
+        content = "Python is a programming language"
+        result = plugin.analyze(content)
+
+        if result.success:
+            assert 'tags' in result.data
+            assert len(result.data['tags']) > 0
+        else:
+            # Ollama not available
+            assert 'ollama' in result.message.lower()
+
+    def test_error_handling(self, plugin):
+        """Test plugin error handling"""
+        # Test with invalid input
+        result = plugin.analyze(None)
+        assert result.success is False
+```
+
+### Testing Custom Plugins
 
 ```python
-# In ai_analysis/__init__.py
-# Import real AI analysis plugins
-from .plugins.tagging_plugin import TaggingPlugin
-from .plugins.summarization_plugin import SummarizationPlugin
-from .plugins.sentiment_plugin import SentimentPlugin
+# tests/plugins/test_custom_plugin.py
+import pytest
+from ai_analysis.plugins.my_custom_plugin import MyCustomPlugin
+
+class TestMyCustomPlugin:
+    @pytest.fixture
+    def plugin(self):
+        return MyCustomPlugin()
+
+    def test_custom_functionality(self, plugin):
+        """Test custom plugin functionality"""
+        result = plugin.analyze("test input")
+
+        assert result.success
+        assert "expected_field" in result.data
+
+    def test_custom_parameters(self, plugin):
+        """Test custom plugin parameters"""
+        result = plugin.analyze(
+            "test input",
+            custom_param="value"
+        )
+
+        assert result.success
+        assert result.data["custom_field"] == "value"
 ```
 
-**Real AI Capabilities:**
-- **Tagging Plugin**: Uses Ollama AI to extract relevant keywords and tags from content
-- **Summarization Plugin**: Generates AI-powered summaries with configurable length and style
-- **Sentiment Plugin**: Performs detailed emotional analysis and sentiment classification
+## UI Testing
 
-**Requirements:**
-- Ollama must be installed and running locally
-- Configured AI model (set in `config.OLLAMA_MODEL`)
-- Active internet connection for AI model downloads
+### Testing UI Components
 
-## Continuous Testing
+**tests/test_ui_components.py:**
+```python
+import pytest
+import flet as ft
+from app.ui_components import (
+    ProgressButton,
+    ExpandableSection,
+    EditableTextField,
+    SearchField
+)
 
-### Development Workflow
+class TestProgressButton:
+    def test_initialization(self):
+        """Test ProgressButton initialization"""
+        button = ProgressButton(text="Test")
+        assert button.button.text == "Test"
+        assert button.progress_ring.visible is False
 
-1. **Code Changes**: Make changes to AI analysis system
-2. **Virtual Environment**: Always test in clean virtual environment
-3. **Integration Test**: Run `test_basic_integration.py` first
-4. **Component Tests**: Run `test_working_components.py` for detailed validation
-5. **Manual Testing**: Use the application to verify UI integration
+    def test_show_progress(self):
+        """Test showing progress"""
+        button = ProgressButton(text="Test")
+        button.show_progress()
 
-### Pre-Commit Checklist
+        assert button.progress_ring.visible is True
+        assert button.button.disabled is True
 
-- [ ] All tests pass in virtual environment
-- [ ] Requirements.txt is up to date
-- [ ] Integration test confirms backward compatibility
-- [ ] New features have corresponding test coverage
-- [ ] Documentation is updated for new functionality
+    def test_hide_progress(self):
+        """Test hiding progress"""
+        button = ProgressButton(text="Test")
+        button.show_progress()
+        button.hide_progress()
 
-## Test Results Summary
+        assert button.progress_ring.visible is False
+        assert button.button.disabled is False
 
-### ✅ **Current Test Status**
+class TestExpandableSection:
+    def test_initialization(self):
+        """Test ExpandableSection initialization"""
+        section = ExpandableSection(
+            title="Test",
+            icon=ft.Icons.FOLDER,
+            content_items=[ft.Text("Content")]
+        )
 
-**Basic Integration**: ✅ PASSED
-- Core imports functional
-- AI manager operational
-- AppLogic integration successful
-- 3 AI functions available
-- Analysis structure working
+        assert section.title == "Test"
+        assert section.is_expanded is False
 
-**Component Tests**: ✅ PASSED (5/5)
-- Base plugin interface: ✅
-- AI manager functionality: ✅  
-- AppLogic integration: ✅
-- UI integration structure: ✅
-- Backward compatibility: ✅
+    def test_toggle(self):
+        """Test section toggle"""
+        section = ExpandableSection(
+            title="Test",
+            icon=ft.Icons.FOLDER,
+            content_items=[ft.Text("Content")]
+        )
 
-**Virtual Environment**: ✅ VALIDATED
-- Clean dependency isolation
-- Requirements.txt complete
-- No missing dependencies
-- Version compatibility confirmed
+        section._toggle()
+        assert section.is_expanded is True
 
-## Troubleshooting
+        section._toggle()
+        assert section.is_expanded is False
 
-### Common Issues
+    def test_expand_collapse(self):
+        """Test programmatic expand/collapse"""
+        section = ExpandableSection(
+            title="Test",
+            icon=ft.Icons.FOLDER,
+            content_items=[ft.Text("Content")]
+        )
 
-1. **Import Errors**
-   - Ensure virtual environment is activated
-   - Verify all dependencies installed: `pip install -r requirements.txt`
+        section.expand()
+        assert section.is_expanded is True
 
-2. **Plugin Syntax Errors**
-   - Tests use fallback minimal plugins
-   - Core architecture remains testable
-   - Fix plugin syntax independently
+        section.collapse()
+        assert section.is_expanded is False
+```
 
-3. **Database Issues**
-   - Tests use temporary databases
-   - No interference with development data
-   - Clean state for each test run
+## Running Tests
 
-### Debug Mode
-
-Enable detailed logging for troubleshooting:
+### Run All Tests
 
 ```bash
-export ANC_DEBUG=1  # Linux/macOS
-set ANC_DEBUG=1     # Windows
-python test_basic_integration.py
+pytest
 ```
 
-## Future Test Enhancements
+### Run Specific Test File
 
-### Planned Improvements
+```bash
+pytest tests/test_state_manager.py
+```
 
-1. **Mock Ollama Testing**: Add tests with mocked Ollama responses
-2. **UI Integration Tests**: Automated UI component testing
-3. **Performance Tests**: Analysis speed and memory usage tests
-4. **Error Handling Tests**: Comprehensive error scenario testing
-5. **Plugin Development Kit**: Standardized plugin testing framework
+### Run Specific Test
 
-### Test Coverage Goals
+```bash
+pytest tests/test_state_manager.py::TestAppState::test_add_file
+```
 
-- **Unit Tests**: 90%+ coverage for core components
-- **Integration Tests**: All major user workflows
-- **Error Handling**: All exception paths tested
-- **Performance**: Benchmark tests for optimization
+### Run with Coverage
 
-## Conclusion
+```bash
+pytest --cov=app --cov-report=html
+```
 
-The virtual environment testing approach ensures:
+View coverage report:
+```bash
+open htmlcov/index.html
+```
 
-- **Reliable Development**: Clean, reproducible test environment
-- **Quality Assurance**: Comprehensive validation of all components
-- **Production Readiness**: Tests match deployment environment
-- **Maintainability**: Easy to add new tests and validate changes
+### Run Only Unit Tests
 
-The modular AI analysis system is thoroughly tested and production-ready!
+```bash
+pytest -m unit
+```
+
+### Run Only Integration Tests
+
+```bash
+pytest -m integration
+```
+
+### Run Fast Tests (Skip Slow)
+
+```bash
+pytest -m "not slow"
+```
+
+### Run with Verbose Output
+
+```bash
+pytest -v
+```
+
+### Run with Output (print statements)
+
+```bash
+pytest -s
+```
+
+## Best Practices
+
+### 1. Test Naming
+
+```python
+# Good
+def test_add_file_to_state():
+    """Test adding a file to application state"""
+    pass
+
+# Bad
+def test1():
+    pass
+```
+
+### 2. Arrange-Act-Assert (AAA)
+
+```python
+def test_remove_file():
+    # Arrange
+    app_state = AppState()
+    app_state.add_file("test.txt", {"name": "test.txt"})
+
+    # Act
+    app_state.remove_file("test.txt")
+
+    # Assert
+    files = app_state.get_all_files()
+    assert "test.txt" not in files
+```
+
+### 3. Use Fixtures for Setup
+
+```python
+@pytest.fixture
+def prepared_state():
+    """State with pre-loaded files"""
+    state = AppState()
+    state.add_file("file1.txt", {"name": "file1.txt"})
+    state.add_file("file2.txt", {"name": "file2.txt"})
+    return state
+
+def test_with_prepared_state(prepared_state):
+    files = prepared_state.get_all_files()
+    assert len(files) == 2
+```
+
+### 4. Test Edge Cases
+
+```python
+def test_edge_cases():
+    app_state = AppState()
+
+    # Empty string
+    app_state.add_file("", {})
+
+    # None values
+    app_state.add_file(None, None)
+
+    # Very long strings
+    app_state.add_file("x" * 10000, {})
+
+    # Special characters
+    app_state.add_file("test@#$.txt", {})
+```
+
+### 5. Mock External Dependencies
+
+```python
+from unittest.mock import Mock, patch
+
+def test_with_mock():
+    with patch('ollama.chat') as mock_chat:
+        mock_chat.return_value = {'message': {'content': 'mocked response'}}
+
+        plugin = TaggingPlugin()
+        result = plugin.analyze("test")
+
+        assert result.success
+        mock_chat.assert_called_once()
+```
+
+### 6. Test Error Conditions
+
+```python
+def test_error_handling():
+    plugin = MyPlugin()
+
+    # Test with None
+    result = plugin.analyze(None)
+    assert not result.success
+
+    # Test with invalid type
+    result = plugin.analyze(12345)
+    assert not result.success
+
+    # Test with empty
+    result = plugin.analyze("")
+    assert not result.success
+```
+
+### 7. Parametrize Tests
+
+```python
+@pytest.mark.parametrize("content,expected", [
+    ("short", False),
+    ("this is long enough content", True),
+    ("", False),
+])
+def test_content_validation(content, expected):
+    plugin = MyPlugin()
+    assert plugin.validate_content(content) == expected
+```
+
+### 8. Use Descriptive Assertions
+
+```python
+# Good
+assert result.success, f"Analysis failed: {result.message}"
+assert len(tags) > 0, "Expected at least one tag"
+
+# Bad
+assert result.success
+assert len(tags) > 0
+```
+
+## Continuous Integration
+
+### GitHub Actions Example
+
+**.github/workflows/tests.yml:**
+```yaml
+name: Tests
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.12'
+
+    - name: Install dependencies
+      run: |
+        pip install -r requirements.txt
+        pip install -r requirements-dev.txt
+
+    - name: Run tests
+      run: |
+        pytest --cov=app --cov-report=xml
+
+    - name: Upload coverage
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+```
+
+---
+
+**Version:** 3.0.0
+**Last Updated:** October 1, 2025
+**Maintained By:** Project A.N.C. Team
