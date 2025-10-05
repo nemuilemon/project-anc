@@ -12,6 +12,7 @@ from typing import List, Dict, Any, Optional
 from google import genai
 from google.genai import types
 from state_manager import app_state
+import requests
 
 class AliceChatManager:
     """Manages conversations with Alice using Gemini API.
@@ -227,14 +228,58 @@ class AliceChatManager:
 
             return error_message
 
+    def _get_past_conversations_from_compass_api(self, query_text: str) -> Optional[str]:
+        """
+        compass-apiを使用して過去の関連会話履歴を取得する。
+        """
+        # 設定を動的にリロード（最新の値を取得）
+        import importlib
+        importlib.reload(self.config)
+
+        compass_api_url = getattr(self.config, 'COMPASS_API_URL', None)
+        api_config = getattr(self.config, 'COMPASS_API_CONFIG', {})
+
+        if not compass_api_url:
+            return None
+
+        try:
+            # UIから設定された値を使ってpayloadを構築
+            payload = {
+                "text": query_text,
+                "config": {
+                    "target": api_config.get("target", "content"),
+                    "limit": api_config.get("limit", 3),
+                    "compress": api_config.get("compress", True)
+                }
+            }
+
+            # デバッグ: 送信するpayloadをログ出力
+            print(f"[Compass API] Sending payload: {payload['config']}")
+            print(f"[Compass API] Query text length: {len(query_text)} chars")
+
+            # タイムアウトを設定
+            response = requests.post(compass_api_url, json=payload, timeout=90)
+            response.raise_for_status()  # エラーがあれば例外を発生させる
+
+            # "関連する記憶は見つかりませんでした。" という応答でないことを確認
+            if "関連する記憶は見つかりませんでした" in response.text:
+                return None
+
+            return response.text.strip()
+
+        except requests.exceptions.RequestException as e:
+            print(f"Error calling compass-api: {e}")
+            return None
+        
     def _prepare_contents(self) -> List[str]:
         """Prepare conversation contents for the API request.
 
-        APIに渡す情報は以下の4つ:
+        APIに渡す情報は以下の5つの要素で構成されます:
         1. 長期記憶（0-Memory.md）
-        2. 今日の会話履歴（末尾からX文字）
-        3. self.history（現在のセッション）
-        4. 最新のユーザーメッセージ
+        2. 過去の関連会話履歴（compass-apiから取得）
+        3. 今日の会話履歴（末尾から指定文字数）
+        4. 現在のセッションの会話履歴
+        5. 最新のユーザーメッセージ
 
         Returns:
             List[str]: List of message contents
@@ -245,23 +290,43 @@ class AliceChatManager:
         if self.long_term_memory:
             contents.append(f"=== 長期記憶 ===\n{self.long_term_memory}")
 
-        # 2. 今日のチャットログファイルの内容を読み込み（末尾からX文字）
+        # 2. 今日のチャットログファイルの内容を読み込み
         char_limit = getattr(self.config, 'ALICE_CHAT_CONFIG', {}).get('history_char_limit', 4000)
         today_log_content = self._load_today_chat_log(char_limit)
+
+        # 3. 検索モードに基づいてクエリテキストを決定
+        api_config = getattr(self.config, 'COMPASS_API_CONFIG', {})
+        search_mode = api_config.get('search_mode', 'latest')
+        history = app_state.get_conversation_messages()
+
+        query_text = None
+        if search_mode == 'latest':
+            # 最新メッセージのみを使用
+            if history and history[-1]['role'] == 'user':
+                query_text = history[-1]['content']
+        elif search_mode == 'history':
+            # 最近の会話履歴を使用
+            query_text = today_log_content
+
+        # 4. compass-apiから過去の関連会話履歴を取得
+        if query_text:
+            past_conversations = self._get_past_conversations_from_compass_api(query_text)
+            if past_conversations:
+                contents.append(f"=== 過去の関連会話履歴 ===\n{past_conversations}")
+
+        # 5. 今日の会話履歴を追加
         if today_log_content:
             contents.append(f"=== 今日の会話履歴 ===\n{today_log_content}")
 
-        # 3. 現在のセッション履歴（AppStateから取得）
-        history = app_state.get_conversation_messages()
+        # 6. 現在のセッション履歴（AppStateから取得）
         if history:
             chatbox_content = "=== 現在のセッション ===\n"
             for entry in history:
                 role_name = "ご主人様" if entry['role'] == 'user' else "ありす"
                 chatbox_content += f"\n**{role_name}:**\n{entry['content']}\n"
-
             contents.append(chatbox_content)
 
-        # 4. 最新のユーザーメッセージを明示的に追加（APIが確実に認識するため）
+        # 7. 最新のユーザーメッセージを明示的に追加
         if history and history[-1]['role'] == 'user':
             contents.append(f"最新メッセージ: {history[-1]['content']}")
 

@@ -16,6 +16,11 @@ from ui_components import (
     FileListItem,
     SectionHeader
 )
+import sys
+
+# configをインポートするためにパスを追加
+sys.path.append(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'config'))
+import config
 
 
 class MemoryCreationTab(ft.Container):
@@ -174,8 +179,8 @@ class MemoryCreationTab(ft.Container):
             self.page.snack_bar = ft.SnackBar(content=ft.Text("記憶を保存しました。"), bgcolor=ft.Colors.GREEN)
             self.page.snack_bar.open = True
             self.page.update()
-            self.save_button.disabled = True
-            self.update()
+            self.edit_field.save_button.disabled = True
+            self.edit_field.update()
 
         except Exception as ex:
             self._show_error(f"記憶の保存中にエラーが発生しました: {ex}")
@@ -1264,6 +1269,42 @@ class SettingsTab(ft.Container):
             helper_text="AI機能を使用するにはAPIキーが必要です"
         )
 
+        # Compass API URL設定
+        self.compass_api_url_field = ft.TextField(
+            label="Compass API URL",
+            value=getattr(config, 'COMPASS_API_URL', 'http://127.0.0.1:8000/search'),
+            helper_text="過去の会話履歴検索APIのURL"
+        )
+
+        # Compass API 詳細設定
+        self.compass_target_dropdown = ft.Dropdown(
+            label="検索対象 (target)",
+            options=[
+                ft.dropdown.Option(key="content", text="本文全体 (content)"),
+                ft.dropdown.Option(key="summary", text="概要 (summary)"),
+            ],
+            value=getattr(self, '_initial_compass_target', 'content')
+        )
+        self.compass_limit_slider = ft.Slider(
+            min=1,
+            max=10,
+            divisions=9,
+            value=getattr(self, '_initial_compass_limit', 3),
+            label="取得件数 (limit): {value}件"
+        )
+        self.compass_compress_switch = ft.Switch(
+            label="結果を要約する (compress)",
+            value=getattr(self, '_initial_compass_compress', True)
+        )
+        self.compass_search_mode_dropdown = ft.Dropdown(
+            label="検索モード (search_mode)",
+            options=[
+                ft.dropdown.Option(key="latest", text="最新メッセージのみ"),
+                ft.dropdown.Option(key="history", text="最近の会話履歴"),
+            ],
+            value=getattr(self, '_initial_compass_search_mode', 'latest')
+        )
+
         # Alice会話設定
         self.history_char_limit_slider = ft.Slider(
             min=1000,
@@ -1292,7 +1333,8 @@ class SettingsTab(ft.Container):
             "appearance": False,
             "editor": False,
             "api": False,
-            "alice": False
+            "alice": False,
+            "compass_api": False
         }
 
         # 展開可能セクションを作成
@@ -1331,6 +1373,19 @@ class SettingsTab(ft.Container):
             ]
         )
 
+        self.compass_api_section = self._create_expandable_section(
+            "compass_api",
+            "Compass API 設定",
+            ft.Icons.COMPASS_CALIBRATION,
+            [
+                self.compass_api_url_field,
+                self.compass_target_dropdown,
+                self.compass_limit_slider,
+                self.compass_compress_switch,
+                self.compass_search_mode_dropdown
+            ]
+        )
+
         self.content = ft.Column(
             [
                 # ヘッダー
@@ -1348,6 +1403,7 @@ class SettingsTab(ft.Container):
                         self.editor_section,
                         self.api_section,
                         self.alice_section,
+                        self.compass_api_section,
                         ft.Container(
                             content=self.save_settings_button,
                             padding=ft.padding.symmetric(vertical=10),
@@ -1430,6 +1486,18 @@ class SettingsTab(ft.Container):
                 [ft.Text("会話履歴の文字数"), self.history_char_limit_slider, self.history_char_limit_text]
             )
             self.content.controls[1].content.controls[3] = self.alice_section
+        elif section_key == "compass_api":
+            self.compass_api_section = self._create_expandable_section(
+                "compass_api", "Compass API 設定", ft.Icons.COMPASS_CALIBRATION,
+                [
+                    self.compass_api_url_field,
+                    self.compass_target_dropdown,
+                    self.compass_limit_slider,
+                    self.compass_compress_switch,
+                    self.compass_search_mode_dropdown
+                ]
+            )
+            self.content.controls[1].content.controls[4] = self.compass_api_section
 
         # UIを更新
         self.update()
@@ -1437,28 +1505,31 @@ class SettingsTab(ft.Container):
     def _load_current_settings(self):
         """現在の設定値を読み込み、UIコンポーネントに反映"""
         try:
-            import sys
-            import os
-
-            # config.py ファイルのパスを直接指定
-            config_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'config')
-            config_file = os.path.join(config_dir, 'config.py')
-
-            # config モジュールを動的にインポート
-            import importlib.util
-            spec = importlib.util.spec_from_file_location("config", config_file)
-            config = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(config)
-
+            # configモジュールはすでにインポートされている
             # history_char_limit の現在値を取得
             current_char_limit = config.ALICE_CHAT_CONFIG.get('history_char_limit', 4000)
-
-            # スライダーの値を更新（まだ作成されていない可能性があるので、ここでは保存のみ）
             self._initial_char_limit = current_char_limit
+
+            # Compass API URLの現在値を取得
+            current_compass_api_url = getattr(config, 'COMPASS_API_URL', 'http://127.0.0.1:8000/search')
+            if not hasattr(self, 'compass_api_url_field'):
+                self.compass_api_url_field = ft.TextField() # 初期化
+            self.compass_api_url_field.value = current_compass_api_url
+
+            # Compass API Config の現在値を取得
+            api_config = getattr(config, 'COMPASS_API_CONFIG', {})
+            self._initial_compass_target = api_config.get('target', 'content')
+            self._initial_compass_limit = api_config.get('limit', 3)
+            self._initial_compass_compress = api_config.get('compress', True)
+            self._initial_compass_search_mode = api_config.get('search_mode', 'latest')
 
         except Exception as ex:
             print(f"設定の読み込み中にエラーが発生しました: {ex}")
             self._initial_char_limit = 4000
+            self._initial_compass_target = 'content'
+            self._initial_compass_limit = 3
+            self._initial_compass_compress = True
+            self._initial_compass_search_mode = 'latest'
 
     def _on_history_char_limit_change(self, e):
         """会話履歴文字数スライダーの値が変更された時の処理"""
@@ -1469,30 +1540,29 @@ class SettingsTab(ft.Container):
     def _save_settings(self, e=None):
         """設定を保存"""
         try:
-            import sys
-            import os
-
             # config.py ファイルのパスを直接指定
             config_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'config')
             config_file = os.path.join(config_dir, 'config.py')
 
-            # config モジュールを動的にインポート
-            import importlib.util
-            spec = importlib.util.spec_from_file_location("config", config_file)
-            config = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(config)
-
-            # history_char_limit の値を更新
+            # history_char_limit の値を取得
             char_limit = int(self.history_char_limit_slider.value)
-            config.ALICE_CHAT_CONFIG['history_char_limit'] = char_limit
+
+            # Compass API の値を取得
+            compass_api_url = self.compass_api_url_field.value
+            compass_config = {
+                "target": self.compass_target_dropdown.value,
+                "limit": int(self.compass_limit_slider.value),
+                "compress": self.compass_compress_switch.value,
+                "search_mode": self.compass_search_mode_dropdown.value
+            }
 
             # config.py ファイルを書き換えて永続化
-            self._update_config_file(config_file, char_limit)
+            self._update_config_file(config_file, char_limit, compass_api_url, compass_config)
 
             # 成功メッセージを表示
             if hasattr(self, 'page') and self.page:
                 self.page.snack_bar = ft.SnackBar(
-                    content=ft.Text("設定を保存しました"),
+                    content=ft.Text("設定を保存しました。反映にはアプリの再起動が必要な場合があります。"),
                     bgcolor=ft.Colors.GREEN
                 )
                 self.page.snack_bar.open = True
@@ -1508,24 +1578,43 @@ class SettingsTab(ft.Container):
                 self.page.snack_bar.open = True
                 self.page.update()
 
-    def _update_config_file(self, config_file, char_limit):
-        """config.py ファイルの history_char_limit 値を更新"""
+    def _update_config_file(self, config_file, char_limit, compass_api_url, compass_config):
+        """config.py ファイルの値を更新"""
         try:
             with open(config_file, 'r', encoding='utf-8') as f:
                 content = f.read()
 
-            # history_char_limit の行を更新
             import re
-            pattern = r'("history_char_limit":\s*)\d+'
-            replacement = f'"history_char_limit": {char_limit}'
 
-            if re.search(pattern, content):
-                content = re.sub(pattern, replacement, content)
+            # 1. history_char_limit の行を更新
+            pattern_history = r'("history_char_limit":\s*)\d+'
+            replacement_history = f'"history_char_limit": {char_limit}'
+            if re.search(pattern_history, content):
+                content = re.sub(pattern_history, replacement_history, content)
             else:
-                # 存在しない場合は追加（通常は発生しない）
-                pattern = r'("auto_save_interval":\s*\d+,)'
-                replacement = r'\1\n    "history_char_limit": ' + str(char_limit) + ','
-                content = re.sub(pattern, replacement, content)
+                pattern_add = r'("auto_save_interval":\s*\d+,)'
+                replacement_add = r'\1\n    "history_char_limit": ' + str(char_limit) + ','
+                content = re.sub(pattern_add, replacement_add, content)
+
+            # 2. COMPASS_API_URL の行を更新
+            pattern_compass = r'(COMPASS_API_URL\s*=\s*)"[^"]*"'
+            replacement_compass = f'COMPASS_API_URL = "{compass_api_url}"'
+            if re.search(pattern_compass, content):
+                content = re.sub(pattern_compass, replacement_compass, content)
+            else:
+                # 存在しない場合はファイルの末尾に追加
+                content += f'\n\n# Compass API 設定\nCOMPASS_API_URL = "{compass_api_url}"\n'
+
+            # 3. COMPASS_API_CONFIG の更新
+            compass_config_str = str(compass_config).replace("'", '"').replace("True", "True").replace("False", "False")
+            pattern_compass_config = r'COMPASS_API_CONFIG\s*=\s*\{[^}]+\}'
+            if re.search(pattern_compass_config, content, flags=re.DOTALL):
+                content = re.sub(pattern_compass_config, f'COMPASS_API_CONFIG = {compass_config_str}', content, flags=re.DOTALL)
+            else:
+                # 存在しない場合はCOMPASS_API_URLの後に追加
+                pattern_insert = r'(COMPASS_API_URL\s*=\s*"[^"]*"\n)'
+                replacement_insert = f'\\1\nCOMPASS_API_CONFIG = {compass_config_str}\n'
+                content = re.sub(pattern_insert, replacement_insert, content)
 
             with open(config_file, 'w', encoding='utf-8') as f:
                 f.write(content)

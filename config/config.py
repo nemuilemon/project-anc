@@ -75,10 +75,17 @@ CREATE_NIPPO_PROMPT_PATH = os.path.join(PROMPTS_DIR, "create_nippo_prompt.md")
 # Alice Chat ログディレクトリ
 CHAT_LOGS_DIR = os.path.join(PROJECT_ROOT, "data", "chat_logs")
 
+# Compass API 設定
+# 過去の関連会話履歴を検索するためのAPIエンドポイント
+COMPASS_API_URL = "http://127.0.0.1:8000/search"
+
+# Compass API リクエスト設定
+COMPASS_API_CONFIG = {"target": "content", "limit": 3, "compress": True, "search_mode": "latest"}
+
 # Alice Chat 設定
 ALICE_CHAT_CONFIG = {
     "model": "gemini-2.5-pro",  # デフォルトのGeminiモデル
     "max_history_length": 500,  # 保持する会話履歴の最大件数
     "auto_save_interval": 30,  # 自動保存間隔（秒）
-    "history_char_limit": 2000,  # 過去のログから読み込む文字数制限
+    "history_char_limit": 4000,  # 過去のログから読み込む文字数制限
 }
