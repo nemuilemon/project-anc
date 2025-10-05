@@ -80,7 +80,7 @@ CHAT_LOGS_DIR = os.path.join(PROJECT_ROOT, "data", "chat_logs")
 COMPASS_API_URL = "http://127.0.0.1:8000/search"
 
 # Compass API リクエスト設定
-COMPASS_API_CONFIG = {"target": "content", "limit": 3, "compress": True, "search_mode": "latest"}
+COMPASS_API_CONFIG = {"target": "summary", "limit": 5, "compress": False, "search_mode": "latest"}
 
 # Alice Chat 設定
 ALICE_CHAT_CONFIG = {

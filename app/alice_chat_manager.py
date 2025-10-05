@@ -208,8 +208,7 @@ class AliceChatManager:
             # Log the dialog (for debugging/API tracking)
             self._log_dialog(contents, response_text)
 
-            # Save to daily chat log
-            self._save_to_chat_log(user_message, response_text)
+            # Note: Daily chat log is saved by the UI handler to avoid duplication
 
             # Add Alice's response to AppState
             app_state.add_conversation_message('model', response_text)
