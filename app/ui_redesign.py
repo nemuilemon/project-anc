@@ -25,13 +25,17 @@ class MainConversationArea(ft.Container):
         - 会話コントロール: 履歴管理、エクスポート等
     """
 
-    def __init__(self, on_send_message=None, alice_chat_manager=None, **kwargs):
+    def __init__(self, on_send_message=None, alice_chat_manager=None, app_state=None, **kwargs):
         super().__init__(**kwargs)
 
         self.on_send_message = on_send_message
         self.alice_chat_manager = alice_chat_manager
+        self.app_state = app_state
 
-        # チャット履歴表示エリア
+        # タブごとのチャット履歴表示エリア（session_id -> ListView）
+        self.conversation_views = {}
+
+        # チャット履歴表示エリア（現在アクティブな会話）
         self.chat_history_view = ft.ListView(
             expand=True,
             auto_scroll=True,
@@ -40,17 +44,18 @@ class MainConversationArea(ft.Container):
             controls=[]
         )
 
+        # チャット履歴コンテナ（切り替え可能にするため参照を保持）
+        self.chat_history_container = None
+
         # メッセージ入力エリア
         self.message_input = ft.TextField(
             hint_text="アリスに話しかけてください...",
             multiline=True,
-            min_lines=1,
-            max_lines=5,
             shift_enter=True,
-            expand=True,
             on_submit=self._send_message,
             border=ft.InputBorder.OUTLINE,
-            filled=True
+            filled=True,
+            expand=True
         )
 
         # 送信ボタン
@@ -78,19 +83,32 @@ class MainConversationArea(ft.Container):
             ft.IconButton(
                 icon=ft.Icons.CLEAR_ALL,
                 tooltip="会話履歴をクリア",
-                on_click=self._clear_chat_history
+                on_click=self._clear_chat_history,
+                icon_size=20
             ),
             ft.IconButton(
                 icon=ft.Icons.DOWNLOAD,
                 tooltip="会話をエクスポート",
-                on_click=self._export_chat
+                on_click=self._export_chat,
+                icon_size=20
             ),
             ft.IconButton(
                 icon=ft.Icons.ADD_CIRCLE,
                 tooltip="新しい会話を作成",
-                on_click=self._new_conversation
+                on_click=self._new_conversation,
+                icon_size=20,
+                icon_color=ft.Colors.BLUE
             )
-        ], spacing=5)
+        ], spacing=0, tight=True)
+
+        # 会話タブ（複数会話管理用）
+        self.conversation_tabs = ft.Tabs(
+            selected_index=0,
+            animation_duration=200,
+            on_change=self._on_tab_change,
+            expand=False,
+            tabs=[]
+        )
 
         # 入力行の構成
         self.input_row = ft.Row([
@@ -99,32 +117,34 @@ class MainConversationArea(ft.Container):
             self.send_button
         ], spacing=10, alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
 
+        # チャット履歴コンテナを作成
+        self.chat_history_container = ft.Container(
+            content=self.chat_history_view,
+            expand=True,
+            border=ft.border.all(1, ft.Colors.GREY_300),
+            border_radius=10,
+            margin=ft.margin.all(10)
+        )
+
         # メインコンテンツの構成
         self.content = ft.Column([
-            # ヘッダー（タイトルとコントロール）
+            # ヘッダー（会話タブとコントロール）
             ft.Container(
                 content=ft.Row([
-                    ft.Text(
-                        "Alice との会話",
-                        size=24,
-                        weight=ft.FontWeight.BOLD,
-                        color=ft.Colors.BLUE_800
+                    ft.Container(
+                        content=self.conversation_tabs,
+                        expand=True
                     ),
                     self.control_buttons
                 ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
                 padding=ft.padding.symmetric(horizontal=20, vertical=10),
                 bgcolor=ft.Colors.BLUE_50,
-                border_radius=10
+                border_radius=10,
+                height=60  # デバッグ用: 明示的な高さ
             ),
 
             # チャット履歴エリア
-            ft.Container(
-                content=self.chat_history_view,
-                expand=True,
-                border=ft.border.all(1, ft.Colors.GREY_300),
-                border_radius=10,
-                margin=ft.margin.all(10)
-            ),
+            self.chat_history_container,
 
             # 入力エリア
             ft.Container(
@@ -132,13 +152,23 @@ class MainConversationArea(ft.Container):
                 padding=ft.padding.all(15),
                 bgcolor=ft.Colors.GREY_50,
                 border_radius=10,
-                margin=ft.margin.symmetric(horizontal=10, vertical=5)
+                margin=ft.margin.symmetric(horizontal=10, vertical=5),
+                height=80  # デバッグ用: 明示的な高さ
             )
-        ])
+        ], expand=True)
 
         # Flexプロパティ（2/3の領域を占有）
         self.expand = 2
         self.thinking_indicator = None
+
+        # 初期化フラグ（ページ追加後に初期化するため）
+        self._initialized = False
+
+    def did_mount(self):
+        """コントロールがページに追加された後に呼ばれる"""
+        if not self._initialized:
+            self._initialize_conversations()
+            self._initialized = True
 
     def _send_message(self, e=None):
         """メッセージ送信処理"""
@@ -168,14 +198,32 @@ class MainConversationArea(ft.Container):
                 padding=ft.padding.all(10),
                 margin=ft.margin.symmetric(vertical=2)
             )
-        self.chat_history_view.controls.append(self.thinking_indicator)
-        self.chat_history_view.update()
+
+        # アクティブな会話のListViewに追加
+        if self.app_state:
+            active_id = self.app_state.get_active_conversation_id()
+            if active_id and active_id in self.conversation_views:
+                active_view = self.conversation_views[active_id]
+                active_view.controls.append(self.thinking_indicator)
+                active_view.update()
+        else:
+            self.chat_history_view.controls.append(self.thinking_indicator)
+            self.chat_history_view.update()
 
     def hide_thinking_indicator(self):
         """AIの思考中インジケーターを非表示"""
-        if self.thinking_indicator in self.chat_history_view.controls:
-            self.chat_history_view.controls.remove(self.thinking_indicator)
-            self.chat_history_view.update()
+        # アクティブな会話のListViewから削除
+        if self.app_state:
+            active_id = self.app_state.get_active_conversation_id()
+            if active_id and active_id in self.conversation_views:
+                active_view = self.conversation_views[active_id]
+                if self.thinking_indicator in active_view.controls:
+                    active_view.controls.remove(self.thinking_indicator)
+                    active_view.update()
+        else:
+            if self.thinking_indicator in self.chat_history_view.controls:
+                self.chat_history_view.controls.remove(self.thinking_indicator)
+                self.chat_history_view.update()
 
     def _add_message(self, sender, content, is_user=True):
         """チャット履歴にメッセージを追加"""
@@ -197,7 +245,7 @@ class MainConversationArea(ft.Container):
                         color=ft.Colors.GREY_600
                     )
                 ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-                ft.Text(content, selectable=True)
+                ft.Markdown(content, selectable=True, extension_set="gitHubWeb")
             ]),
             bgcolor=message_color,
             padding=ft.padding.all(10),
@@ -205,8 +253,17 @@ class MainConversationArea(ft.Container):
             margin=ft.margin.symmetric(vertical=2)
         )
 
-        self.chat_history_view.controls.append(message_container)
-        self.chat_history_view.update()
+        # アクティブな会話のListViewに追加
+        if self.app_state:
+            active_id = self.app_state.get_active_conversation_id()
+            if active_id and active_id in self.conversation_views:
+                active_view = self.conversation_views[active_id]
+                active_view.controls.append(message_container)
+                active_view.update()
+        else:
+            # AppStateがない場合は従来通り
+            self.chat_history_view.controls.append(message_container)
+            self.chat_history_view.update()
 
     def add_ai_response(self, response):
         """AIからの応答を表示"""
@@ -214,24 +271,250 @@ class MainConversationArea(ft.Container):
         self._add_message("Alice", response, is_user=False)
 
     def _clear_chat_history(self, e=None):
-        """会話履歴をクリア"""
-        # UIの表示をクリア
-        self.chat_history_view.controls.clear()
-        self.chat_history_view.update()
+        """会話履歴をクリア（アクティブなタブのみ）"""
+        if not self.app_state:
+            # AppStateがない場合は従来通りの動作
+            self.chat_history_view.controls.clear()
+            self.chat_history_view.update()
+            if self.alice_chat_manager:
+                self.alice_chat_manager.clear_history()
+            return
 
-        # AliceChatManagerの履歴もクリア
-        if self.alice_chat_manager:
-            self.alice_chat_manager.clear_history()
+        # アクティブな会話の履歴をクリア
+        active_id = self.app_state.get_active_conversation_id()
+        if active_id:
+            # AppStateの履歴をクリア
+            self.app_state.clear_conversation(active_id)
+
+            # UIの表示をクリア
+            if active_id in self.conversation_views:
+                self.conversation_views[active_id].controls.clear()
+                self.conversation_views[active_id].update()
 
     def _export_chat(self, e=None):
         """会話をエクスポート（将来実装）"""
         # TODO: 会話履歴をファイルに保存
         pass
 
+    def _initialize_conversations(self):
+        """AppStateから会話を初期化、または新規会話を作成"""
+        if not self.app_state:
+            return
+
+        conversations = self.app_state.get_all_conversations()
+
+        if not conversations:
+            # 会話がない場合、新しい会話を作成
+            session_id = self.app_state.create_new_conversation()
+            conversations = self.app_state.get_all_conversations()
+
+        # 各会話に対してタブを作成し、メッセージ履歴を復元
+        for conv in conversations:
+            self._add_conversation_tab(conv.session_id, conv.title)
+
+            # 保存されたメッセージ履歴を復元
+            if conv.messages:
+                self._restore_messages(conv.session_id, conv.messages)
+
+        # アクティブな会話を表示
+        active_id = self.app_state.get_active_conversation_id()
+        if active_id:
+            self._switch_to_conversation(active_id)
+
+            # ウェルカムメッセージを追加（新規会話の場合のみ）
+            if active_id in self.conversation_views:
+                # メッセージがない場合のみウェルカムメッセージを表示
+                if len(self.conversation_views[active_id].controls) == 0:
+                    welcome_msg = ft.Container(
+                        content=ft.Text(
+                            "アリスとの会話を始めましょう。下のボックスにメッセージを入力してください。",
+                            color=ft.Colors.GREY_600,
+                            italic=True
+                        ),
+                        padding=ft.padding.all(10),
+                        margin=ft.margin.symmetric(vertical=5)
+                    )
+                    self.conversation_views[active_id].controls.append(welcome_msg)
+
+        # タブとコンテナを更新
+        if self.page:
+            self.conversation_tabs.update()
+            if self.chat_history_container:
+                self.chat_history_container.update()
+
+    def _restore_messages(self, session_id: str, messages: list):
+        """保存されたメッセージ履歴をUIに復元"""
+        if session_id not in self.conversation_views:
+            return
+
+        list_view = self.conversation_views[session_id]
+
+        for msg in messages:
+            role = msg.get('role', 'user')
+            content = msg.get('content', '')
+            timestamp = msg.get('timestamp', '')
+
+            # タイムスタンプをパース
+            try:
+                from datetime import datetime as dt
+                msg_time = dt.fromisoformat(timestamp)
+                time_str = msg_time.strftime('%H:%M')
+            except:
+                time_str = datetime.datetime.now().strftime('%H:%M')
+
+            # メッセージコンテナを作成
+            is_user = (role == 'user')
+            sender = "User" if is_user else "Alice"
+            message_color = ft.Colors.BLUE_100 if is_user else ft.Colors.GREEN_100
+            text_color = ft.Colors.BLUE_800 if is_user else ft.Colors.GREEN_800
+
+            message_container = ft.Container(
+                content=ft.Column([
+                    ft.Row([
+                        ft.Text(
+                            sender,
+                            weight=ft.FontWeight.BOLD,
+                            color=text_color,
+                            size=12
+                        ),
+                        ft.Text(
+                            time_str,
+                            size=10,
+                            color=ft.Colors.GREY_600
+                        )
+                    ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                    ft.Markdown(content, selectable=True, extension_set="gitHubWeb")
+                ]),
+                bgcolor=message_color,
+                padding=ft.padding.all(10),
+                border_radius=10,
+                margin=ft.margin.symmetric(vertical=2)
+            )
+
+            list_view.controls.append(message_container)
+
+    def _add_conversation_tab(self, session_id: str, title: str):
+        """新しい会話タブを追加"""
+        # タブ用のListViewを作成
+        list_view = ft.ListView(
+            expand=True,
+            auto_scroll=True,
+            spacing=10,
+            padding=ft.padding.all(20),
+            controls=[]
+        )
+        self.conversation_views[session_id] = list_view
+
+        # タブを作成（閉じるボタン付き）
+        close_button = ft.IconButton(
+            icon=ft.Icons.CLOSE,
+            icon_size=16,
+            tooltip="タブを閉じる",
+            on_click=lambda e, sid=session_id: self._close_tab(sid)
+        )
+
+        tab = ft.Tab(
+            text=title,
+            content=ft.Container()  # コンテンツは_switch_to_conversationで設定
+        )
+
+        # タブのテキスト部分にタイトルと閉じるボタンを配置
+        tab.tab_content = ft.Row([
+            ft.Text(title, size=14),
+            close_button
+        ], spacing=5)
+
+        self.conversation_tabs.tabs.append(tab)
+
+    def _switch_to_conversation(self, session_id: str):
+        """指定された会話に切り替え"""
+        if session_id not in self.conversation_views:
+            return
+
+        # AppStateのアクティブ会話を更新
+        if self.app_state:
+            try:
+                self.app_state.set_active_conversation(session_id)
+            except ValueError:
+                return
+
+        # チャット履歴ビューを切り替え
+        self.chat_history_view = self.conversation_views[session_id]
+
+        # コンテナの中身を更新
+        if self.chat_history_container:
+            self.chat_history_container.content = self.chat_history_view
+
+        # タブのインデックスを更新
+        for i, tab in enumerate(self.conversation_tabs.tabs):
+            if i < len(self.app_state.get_all_conversations()):
+                conv = list(self.conversation_views.keys())[i]
+                if conv == session_id:
+                    self.conversation_tabs.selected_index = i
+                    break
+
+        # UIを更新（ページに追加済みの場合のみ）
+        if self.page:
+            self.update()
+
+    def _on_tab_change(self, e):
+        """タブが切り替えられた時の処理"""
+        if not self.app_state:
+            return
+
+        selected_index = self.conversation_tabs.selected_index
+        conversations = list(self.conversation_views.keys())
+
+        if 0 <= selected_index < len(conversations):
+            session_id = conversations[selected_index]
+            self._switch_to_conversation(session_id)
+
+    def _close_tab(self, session_id: str):
+        """タブを閉じる"""
+        if not self.app_state or len(self.conversation_views) <= 1:
+            # 最後のタブは閉じない
+            return
+
+        # AppStateから会話を削除
+        self.app_state.remove_conversation(session_id)
+
+        # UIからタブとビューを削除
+        if session_id in self.conversation_views:
+            del self.conversation_views[session_id]
+
+        # タブリストから削除
+        conversations = list(self.conversation_views.keys())
+        for i, tab in enumerate(self.conversation_tabs.tabs):
+            # インデックスで削除
+            if i >= len(conversations):
+                self.conversation_tabs.tabs.pop(i)
+                break
+
+        # 新しいアクティブな会話に切り替え
+        active_id = self.app_state.get_active_conversation_id()
+        if active_id:
+            self._switch_to_conversation(active_id)
+
+        if self.page:
+            self.update()
+
     def _new_conversation(self, e=None):
         """新しい会話を開始"""
-        self._clear_chat_history()
-        # TODO: 新しい会話セッションの初期化
+        if not self.app_state:
+            return
+
+        # AppStateで新しい会話を作成
+        session_id = self.app_state.create_new_conversation()
+        conversation = self.app_state.get_conversation_state(session_id)
+
+        # 新しいタブを追加
+        self._add_conversation_tab(session_id, conversation.title)
+
+        # 新しい会話に切り替え
+        self._switch_to_conversation(session_id)
+
+        if self.page:
+            self.update()
 
     def _attach_file(self, e=None):
         """ファイル添付（将来実装）"""
@@ -385,7 +668,7 @@ class ConversationFirstUI(ft.Row):
     def __init__(self, page: ft.Page, on_send_message=None, alice_chat_manager=None,
                  on_file_operations=None, on_save_file=None, available_ai_functions=None,
                  on_run_analysis=None, memory_creation_manager=None, memories_dir=None,
-                 nippo_creation_manager=None, nippo_dir=None, **kwargs):
+                 nippo_creation_manager=None, nippo_dir=None, app_state=None, **kwargs):
         super().__init__(**kwargs)
 
         self.page = page
@@ -393,7 +676,8 @@ class ConversationFirstUI(ft.Row):
         # メイン・カンバセーション・エリア
         self.conversation_area = MainConversationArea(
             on_send_message=on_send_message,
-            alice_chat_manager=alice_chat_manager
+            alice_chat_manager=alice_chat_manager,
+            app_state=app_state
         )
 
         # 補助ツール・サイドバー
@@ -442,9 +726,10 @@ class RedesignedAppUI:
                  on_close_tab, on_create_file, on_archive_file, on_delete_file,
                  on_run_ai_analysis=None, on_run_automation=None, on_cancel_automation=None,
                  on_get_automation_preview=None, available_ai_functions=None,
-                 on_send_chat_message=None, config=None):
+                 on_send_chat_message=None, config=None, app_state=None):
 
         self.page = page
+        self.app_state = app_state
 
         # 既存のコールバック関数を保存
         self.callbacks = {
@@ -514,7 +799,8 @@ class RedesignedAppUI:
             memory_creation_manager=self.memory_creation_manager,
             memories_dir=self.memories_dir,
             nippo_creation_manager=self.nippo_creation_manager,
-            nippo_dir=self.nippo_dir
+            nippo_dir=self.nippo_dir,
+            app_state=app_state
         )
 
     def build(self):

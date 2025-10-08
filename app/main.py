@@ -12,6 +12,7 @@ from logic import AppLogic
 from handlers import AppHandlers
 from logger import app_logger, PerformanceTimer
 from threading import Thread, Event
+from state_manager import AppState
 
 def main(page: ft.Page):
     """Project A.N.C.のメイン関数。
@@ -89,7 +90,12 @@ def main(page: ft.Page):
 
     # キャンセル命令をスレッドに伝えるためのイベントオブジェクト
     cancel_event = Event()
-    
+
+    # Initialize AppState with persistence
+    persistence_file = os.path.join(config.DATA_DIR, 'conversation_state.json')
+    app_state = AppState(persistence_file=persistence_file)
+    app_logger.main_logger.info(f"AppState initialized with persistence file: {persistence_file}")
+
     # Create centralized event handlers (app_ui will be set later)
     handlers = AppHandlers(page, app_logic, None, cancel_event)
     
@@ -117,7 +123,9 @@ def main(page: ft.Page):
             available_ai_functions=available_ai_functions,
             # Chat functionality
             on_send_chat_message=handlers.handle_send_chat_message,
-            config=config
+            config=config,
+            # AppState for conversation management
+            app_state=app_state
         )
         
         # Now update the handlers with the initialized app_ui
@@ -161,6 +169,12 @@ def main(page: ft.Page):
     def on_page_close(e):
         # Auto-save all open tabs before closing
         app_ui.auto_save_all_tabs()
+
+        # Save conversation state
+        if app_state:
+            app_state.save_conversations()
+            app_logger.main_logger.info("Conversation state saved on application close")
+
         app_logger.log_app_shutdown()
         # Cleanup async operations
         from async_operations import async_manager

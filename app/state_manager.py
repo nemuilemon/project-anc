@@ -6,9 +6,11 @@ inconsistencies.
 """
 
 from typing import Dict, List, Any, Optional, Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 from datetime import datetime
 import threading
+import json
+import os
 
 
 @dataclass
@@ -27,6 +29,7 @@ class FileState:
 class ConversationState:
     """Represents the state of a conversation with Alice."""
     session_id: str
+    title: str = "新しい会話"
     messages: List[Dict[str, Any]] = field(default_factory=list)
     started_at: Optional[datetime] = None
     last_message_at: Optional[datetime] = None
@@ -45,8 +48,12 @@ class AppState:
     components to subscribe to state changes.
     """
 
-    def __init__(self):
-        """Initialize the application state."""
+    def __init__(self, persistence_file: Optional[str] = None):
+        """Initialize the application state.
+
+        Args:
+            persistence_file: Optional path to load/save state
+        """
         # Thread safety
         self._lock = threading.RLock()
 
@@ -54,8 +61,9 @@ class AppState:
         self._files: Dict[str, FileState] = {}
         self._active_file_path: Optional[str] = None
 
-        # Conversation state
-        self._conversation: Optional[ConversationState] = None
+        # Conversation states (multiple conversations support)
+        self._conversations: Dict[str, ConversationState] = {}
+        self._active_conversation_id: Optional[str] = None
 
         # UI state
         self._selected_sidebar_tab: int = 0
@@ -75,6 +83,13 @@ class AppState:
             'settings_changed': [],
             'ui_state_changed': []
         }
+
+        # Persistence
+        self._persistence_file = persistence_file
+
+        # Load state if persistence file exists
+        if persistence_file:
+            self.load_conversations(persistence_file)
 
     # File State Management
 
@@ -173,20 +188,103 @@ class AppState:
 
     # Conversation State Management
 
+    def create_new_conversation(self, title: Optional[str] = None) -> str:
+        """Create a new conversation session.
+
+        Args:
+            title: Optional title for the conversation
+
+        Returns:
+            The session ID of the newly created conversation
+        """
+        with self._lock:
+            import uuid
+            session_id = f"session_{uuid.uuid4().hex[:8]}"
+
+            # Generate default title if not provided
+            if not title:
+                conversation_count = len(self._conversations) + 1
+                title = f"会話 {conversation_count}"
+
+            self._conversations[session_id] = ConversationState(
+                session_id=session_id,
+                title=title,
+                started_at=datetime.now()
+            )
+
+            # Set as active conversation
+            self._active_conversation_id = session_id
+
+            return session_id
+
+    def set_active_conversation(self, session_id: str) -> None:
+        """Set the active conversation.
+
+        Args:
+            session_id: The session ID to activate
+        """
+        with self._lock:
+            if session_id not in self._conversations:
+                raise ValueError(f"Conversation not found: {session_id}")
+
+            self._active_conversation_id = session_id
+
+    def get_active_conversation_id(self) -> Optional[str]:
+        """Get the active conversation session ID.
+
+        Returns:
+            The active conversation session ID, or None if no conversation is active
+        """
+        with self._lock:
+            return self._active_conversation_id
+
+    def get_all_conversations(self) -> List[ConversationState]:
+        """Get all conversation states.
+
+        Returns:
+            List of all conversation states
+        """
+        with self._lock:
+            return list(self._conversations.values())
+
+    def remove_conversation(self, session_id: str) -> None:
+        """Remove a conversation session.
+
+        Args:
+            session_id: The session ID to remove
+        """
+        with self._lock:
+            if session_id not in self._conversations:
+                return
+
+            # Remove the conversation
+            del self._conversations[session_id]
+
+            # If it was the active conversation, switch to another one
+            if self._active_conversation_id == session_id:
+                if self._conversations:
+                    # Switch to the first available conversation
+                    self._active_conversation_id = next(iter(self._conversations.keys()))
+                else:
+                    # No conversations left, create a new one
+                    self.create_new_conversation()
+
     def init_conversation(self, session_id: str) -> None:
-        """Initialize a new conversation session.
+        """Initialize a new conversation session (deprecated, use create_new_conversation).
 
         Args:
             session_id: Unique session identifier
         """
         with self._lock:
-            self._conversation = ConversationState(
-                session_id=session_id,
-                started_at=datetime.now()
-            )
+            if session_id not in self._conversations:
+                self._conversations[session_id] = ConversationState(
+                    session_id=session_id,
+                    started_at=datetime.now()
+                )
+                self._active_conversation_id = session_id
 
     def add_conversation_message(self, role: str, content: str, metadata: Optional[Dict] = None) -> None:
-        """Add a message to the conversation.
+        """Add a message to the active conversation.
 
         Args:
             role: The message role ('user' or 'model')
@@ -194,8 +292,9 @@ class AppState:
             metadata: Optional metadata for the message
         """
         with self._lock:
-            if not self._conversation:
-                self.init_conversation(f"session_{datetime.now().isoformat()}")
+            # Ensure there's an active conversation
+            if not self._active_conversation_id or self._active_conversation_id not in self._conversations:
+                self.create_new_conversation()
 
             message = {
                 'role': role,
@@ -204,35 +303,58 @@ class AppState:
                 'metadata': metadata or {}
             }
 
-            self._conversation.messages.append(message)
-            self._conversation.last_message_at = datetime.now()
+            conversation = self._conversations[self._active_conversation_id]
+            conversation.messages.append(message)
+            conversation.last_message_at = datetime.now()
+
+            # Update title from first user message if still default
+            if conversation.title.startswith("会話") and role == 'user' and len(conversation.messages) <= 2:
+                # Use first 20 characters of user message as title
+                conversation.title = content[:20] + ("..." if len(content) > 20 else "")
+
             self._notify_observers('conversation_updated', message)
 
-    def clear_conversation(self) -> None:
-        """Clear the current conversation."""
-        with self._lock:
-            self._conversation = None
-            self._notify_observers('conversation_cleared', None)
+    def clear_conversation(self, session_id: Optional[str] = None) -> None:
+        """Clear messages in a conversation (or the active conversation).
 
-    def get_conversation_messages(self) -> List[Dict[str, Any]]:
-        """Get all conversation messages.
+        Args:
+            session_id: The session ID to clear (uses active if None)
+        """
+        with self._lock:
+            target_id = session_id or self._active_conversation_id
+            if target_id and target_id in self._conversations:
+                self._conversations[target_id].messages.clear()
+                self._notify_observers('conversation_cleared', target_id)
+
+    def get_conversation_messages(self, session_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Get conversation messages.
+
+        Args:
+            session_id: The session ID (uses active if None)
 
         Returns:
             List of conversation messages
         """
         with self._lock:
-            if self._conversation:
-                return self._conversation.messages.copy()
+            target_id = session_id or self._active_conversation_id
+            if target_id and target_id in self._conversations:
+                return self._conversations[target_id].messages.copy()
             return []
 
-    def get_conversation_state(self) -> Optional[ConversationState]:
-        """Get the current conversation state.
+    def get_conversation_state(self, session_id: Optional[str] = None) -> Optional[ConversationState]:
+        """Get a conversation state.
+
+        Args:
+            session_id: The session ID (uses active if None)
 
         Returns:
             The conversation state, or None if no conversation exists
         """
         with self._lock:
-            return self._conversation
+            target_id = session_id or self._active_conversation_id
+            if target_id:
+                return self._conversations.get(target_id)
+            return None
 
     # UI State Management
 
@@ -361,13 +483,106 @@ class AppState:
                     'active': self._active_file_path
                 },
                 'conversation': {
-                    'active': self._conversation is not None,
-                    'message_count': len(self._conversation.messages) if self._conversation else 0
+                    'active': self._active_conversation_id is not None,
+                    'total_conversations': len(self._conversations),
+                    'message_count': len(self._conversations[self._active_conversation_id].messages) if self._active_conversation_id and self._active_conversation_id in self._conversations else 0
                 },
                 'ui': {
                     'selected_tab': self._selected_sidebar_tab
                 }
             }
+
+    # Persistence Methods
+
+    def save_conversations(self, filepath: Optional[str] = None) -> bool:
+        """Save conversation states to a JSON file.
+
+        Args:
+            filepath: Path to save to (uses default if None)
+
+        Returns:
+            True if successful, False otherwise
+        """
+        target_file = filepath or self._persistence_file
+        if not target_file:
+            return False
+
+        try:
+            with self._lock:
+                # Prepare conversation data
+                conversations_data = {}
+                for session_id, conv in self._conversations.items():
+                    conversations_data[session_id] = {
+                        'session_id': conv.session_id,
+                        'title': conv.title,
+                        'messages': conv.messages,
+                        'started_at': conv.started_at.isoformat() if conv.started_at else None,
+                        'last_message_at': conv.last_message_at.isoformat() if conv.last_message_at else None
+                    }
+
+                state_data = {
+                    'conversations': conversations_data,
+                    'active_conversation_id': self._active_conversation_id,
+                    'version': '1.0'
+                }
+
+            # Ensure directory exists
+            os.makedirs(os.path.dirname(target_file), exist_ok=True)
+
+            # Write to file
+            with open(target_file, 'w', encoding='utf-8') as f:
+                json.dump(state_data, f, ensure_ascii=False, indent=2)
+
+            return True
+
+        except Exception as e:
+            print(f"Error saving conversations to {target_file}: {e}")
+            return False
+
+    def load_conversations(self, filepath: Optional[str] = None) -> bool:
+        """Load conversation states from a JSON file.
+
+        Args:
+            filepath: Path to load from (uses default if None)
+
+        Returns:
+            True if successful, False otherwise
+        """
+        target_file = filepath or self._persistence_file
+        if not target_file or not os.path.exists(target_file):
+            return False
+
+        try:
+            with open(target_file, 'r', encoding='utf-8') as f:
+                state_data = json.load(f)
+
+            with self._lock:
+                # Clear existing conversations
+                self._conversations.clear()
+
+                # Load conversations
+                conversations_data = state_data.get('conversations', {})
+                for session_id, conv_data in conversations_data.items():
+                    self._conversations[session_id] = ConversationState(
+                        session_id=conv_data['session_id'],
+                        title=conv_data.get('title', '新しい会話'),
+                        messages=conv_data.get('messages', []),
+                        started_at=datetime.fromisoformat(conv_data['started_at']) if conv_data.get('started_at') else None,
+                        last_message_at=datetime.fromisoformat(conv_data['last_message_at']) if conv_data.get('last_message_at') else None
+                    )
+
+                # Load active conversation ID
+                self._active_conversation_id = state_data.get('active_conversation_id')
+
+                # Validate active conversation exists
+                if self._active_conversation_id and self._active_conversation_id not in self._conversations:
+                    self._active_conversation_id = None
+
+            return True
+
+        except Exception as e:
+            print(f"Error loading conversations from {target_file}: {e}")
+            return False
 
 
 # Global state instance

@@ -13,8 +13,11 @@
 import os
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+# データファイルを保存するメインディレクトリ
+DATA_DIR = os.path.join(PROJECT_ROOT, "data")
+
 # メモを保存するメインディレクトリ
-NOTES_DIR = os.path.join(PROJECT_ROOT, "data", "notes")
+NOTES_DIR = os.path.join(DATA_DIR, "notes")
 
 # アーカイブファイルを保存するディレクトリ
 # アーカイブされたファイルはここに移動される
@@ -22,7 +25,7 @@ ARCHIVE_DIR = os.path.join(NOTES_DIR, ".archive")
 
 # TinyDBデータベースファイル名とパス
 # ファイルのメタデータ（タグ、ステータス、順序等）を格納
-DB_FILE = os.path.join(PROJECT_ROOT, "data", "anc_db.json")
+DB_FILE = os.path.join(DATA_DIR, "anc_db.json")
 
 # Ollama AIモデル名
 # タグ自動生成で使用するローカルLLMモデル
@@ -58,10 +61,10 @@ ALICE_SYSTEM_PROMPT_PATH = os.path.join(NOTES_DIR, "0-System-Prompt.md")
 ALICE_MEMORY_FILE_PATH = os.path.join(NOTES_DIR, "0-Memory.md")
 
 # 記憶ファイルを保存するディレクトリ
-MEMORIES_DIR = os.path.join(PROJECT_ROOT, "data", "memories")
+MEMORIES_DIR = os.path.join(DATA_DIR, "memories")
 
 # 日報ファイルを保存するディレクトリ
-NIPPO_DIR = os.path.join(PROJECT_ROOT, "data", "nippo")
+NIPPO_DIR = os.path.join(DATA_DIR, "nippo")
 
 # プロンプトファイルを保存するディレクトリ
 PROMPTS_DIR = os.path.join(PROJECT_ROOT, "prompts")
@@ -73,19 +76,19 @@ CREATE_MEMORY_PROMPT_PATH = os.path.join(PROMPTS_DIR, "create_memory_prompt.md")
 CREATE_NIPPO_PROMPT_PATH = os.path.join(PROMPTS_DIR, "create_nippo_prompt.md")
 
 # Alice Chat ログディレクトリ
-CHAT_LOGS_DIR = os.path.join(PROJECT_ROOT, "data", "chat_logs")
+CHAT_LOGS_DIR = os.path.join(DATA_DIR, "chat_logs")
 
 # Compass API 設定
 # 過去の関連会話履歴を検索するためのAPIエンドポイント
 COMPASS_API_URL = "http://127.0.0.1:8000/search"
 
 # Compass API リクエスト設定
-COMPASS_API_CONFIG = {"target": "summary", "limit": 5, "compress": False, "search_mode": "latest"}
+COMPASS_API_CONFIG = {"target": "summary", "limit": 3, "compress": False, "search_mode": "latest"}
 
 # Alice Chat 設定
 ALICE_CHAT_CONFIG = {
     "model": "gemini-2.5-pro",  # デフォルトのGeminiモデル
     "max_history_length": 500,  # 保持する会話履歴の最大件数
     "auto_save_interval": 30,  # 自動保存間隔（秒）
-    "history_char_limit": 4000,  # 過去のログから読み込む文字数制限
+    "history_char_limit": 1000,  # 過去のログから読み込む文字数制限
 }
