@@ -4,8 +4,12 @@ flet>=0.28.0
 # Database
 tinydb>=4.8.0
 
+# Environment Variables
+python-dotenv>=1.0.0
+
 # AI/ML Services
 google-genai>=1.38.0  # Google Gemini API for Alice chat
+openai>=1.0.0  # OpenAI API for Alice chat (alternative)
 ollama>=0.5.0  # Local AI model support for analysis plugins
 
 # Note: Standard library modules used (no additional requirements):

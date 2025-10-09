@@ -2,19 +2,26 @@
 
 ## 🌸 Alice AI Chat Setup Guide
 
-**Version:** 3.0.0
-**Last Updated:** October 1, 2025
+**Version:** 3.1.0
+**Last Updated:** October 9, 2025
 
-This guide explains how to set up and use Alice, the AI assistant powered by Google Gemini in Project A.N.C.
+This guide explains how to set up and use Alice, the AI assistant powered by **Google Gemini** or **OpenAI** in Project A.N.C.
 
 ## Prerequisites
 
+### For Google Gemini
 - Google AI Studio account
 - Gemini API key (google-generativeai 1.38+)
 
+### For OpenAI
+- OpenAI Platform account
+- OpenAI API key (openai 1.0+)
+
 ## Setup Instructions
 
-### 1. Get Gemini API Key
+### 1. Get API Keys
+
+#### Google Gemini API Key
 
 1. Visit [Google AI Studio](https://aistudio.google.com/app/apikey)
 2. Sign in with your Google account
@@ -22,30 +29,63 @@ This guide explains how to set up and use Alice, the AI assistant powered by Goo
 4. Create a new project or select an existing one
 5. Copy the generated API key
 
-### 2. Configure Environment Variable
+#### OpenAI API Key
 
-#### Windows (Command Prompt)
-```cmd
-set GEMINI_API_KEY=your_api_key_here
-```
+1. Visit [OpenAI Platform](https://platform.openai.com/api-keys)
+2. Sign in with your OpenAI account
+3. Click "Create new secret key"
+4. Give it a name (e.g., "Project ANC")
+5. Copy the generated API key (you won't be able to see it again!)
 
-#### Windows (PowerShell)
-```powershell
-$env:GEMINI_API_KEY = "your_api_key_here"
-```
+### 2. Configure Environment Variables
 
-#### Linux/macOS
-```bash
-export GEMINI_API_KEY="your_api_key_here"
-```
-
-### 3. .env File Configuration (Recommended)
+#### Option A: Using .env File (Recommended)
 
 Create a `.env` file in the project root:
 
+```env
+# API Provider Selection (google or openai)
+CHAT_API_PROVIDER=google
+
+# Google Gemini API Key
+GEMINI_API_KEY=your_gemini_api_key_here
+
+# OpenAI API Key
+OPENAI_API_KEY=your_openai_api_key_here
 ```
-GEMINI_API_KEY=your_api_key_here
+
+#### Option B: System Environment Variables
+
+##### Windows (Command Prompt)
+```cmd
+set CHAT_API_PROVIDER=google
+set GEMINI_API_KEY=your_gemini_api_key_here
+set OPENAI_API_KEY=your_openai_api_key_here
 ```
+
+##### Windows (PowerShell)
+```powershell
+$env:CHAT_API_PROVIDER = "google"
+$env:GEMINI_API_KEY = "your_gemini_api_key_here"
+$env:OPENAI_API_KEY = "your_openai_api_key_here"
+```
+
+##### Linux/macOS
+```bash
+export CHAT_API_PROVIDER="google"
+export GEMINI_API_KEY="your_gemini_api_key_here"
+export OPENAI_API_KEY="your_openai_api_key_here"
+```
+
+### 3. Configure via Settings UI (Easiest)
+
+1. Launch Project A.N.C.: `python app/main.py`
+2. Open the **Settings Tab** in the sidebar
+3. Expand the **API設定** (API Settings) section
+4. Select your preferred **API Provider** (Google Gemini or OpenAI)
+5. Enter the appropriate API key(s)
+6. Click **設定を保存** (Save Settings)
+7. **Restart the application** for changes to take effect
 
 ### 4. Verify Installation
 
@@ -55,8 +95,9 @@ python app/main.py
 ```
 
 2. The main chat interface with Alice will load automatically
-3. Type a message and click send
-4. Verify Alice responds
+3. Check the console output for "API client initialized successfully"
+4. Type a message and click send
+5. Verify Alice responds
 
 ## Features
 
@@ -92,10 +133,11 @@ python app/main.py
    - Full request/response tracking for debugging
 
 5. **AI Model Configuration**
-   - Default model: **gemini-2.5-pro**
+   - **Google Gemini**: gemini-2.5-pro (default)
+   - **OpenAI**: gpt-4-turbo (default)
    - System instruction: `data/notes/0-System-Prompt.md`
    - Configurable via Settings tab
-   - Support for model switching
+   - Support for provider and model switching
 
 ## Troubleshooting
 
@@ -104,10 +146,16 @@ python app/main.py
 **Error:** "Alice connection unavailable" or API initialization failed
 
 **Solutions:**
-- Verify `GEMINI_API_KEY` is correctly set in environment or `.env` file
-- Check API key validity at [Google AI Studio](https://aistudio.google.com/app/apikey)
-- Ensure API key has no leading/trailing spaces
-- Restart the application after setting the environment variable
+- Verify `CHAT_API_PROVIDER` is set to either "google" or "openai"
+- For Google Gemini:
+  - Verify `GEMINI_API_KEY` is correctly set in environment or `.env` file
+  - Check API key validity at [Google AI Studio](https://aistudio.google.com/app/apikey)
+- For OpenAI:
+  - Verify `OPENAI_API_KEY` is correctly set in environment or `.env` file
+  - Check API key validity at [OpenAI Platform](https://platform.openai.com/api-keys)
+- Ensure API keys have no leading/trailing spaces
+- Restart the application after setting the environment variables
+- Check console output for specific error messages
 
 ### System Prompt Errors
 
@@ -212,13 +260,27 @@ Edit these files to customize Alice's knowledge and behavior.
 
 ## API Configuration
 
+### API Provider Selection
+
+Configure in `.env` file or via Settings tab:
+
+```env
+CHAT_API_PROVIDER=google  # or "openai"
+```
+
 ### Model Selection
 
-Edit in Settings tab or `config/config.py`:
+Edit in `config/config.py`:
 
 ```python
-GEMINI_MODEL = "gemini-2.5-pro"  # Default model
-# Alternatives: gemini-2.0-flash-exp, gemini-1.5-pro
+ALICE_CHAT_CONFIG = {
+    "gemini_model": "gemini-2.5-pro",  # Google Gemini model
+    "openai_model": "gpt-4-turbo",     # OpenAI model
+    # ... other settings
+}
+
+# Google Gemini alternatives: gemini-2.0-flash-exp, gemini-1.5-pro
+# OpenAI alternatives: gpt-4, gpt-3.5-turbo, gpt-4-turbo-preview
 ```
 
 ### Context Management
@@ -252,8 +314,44 @@ Alice automatically trims context to fit within API token limits while preservin
    - Check `alice_chat.log.*` for system errors
    - Archive old chat logs periodically
 
+## Switching Between API Providers
+
+You can switch between Google Gemini and OpenAI at any time:
+
+### Method 1: Settings UI (Recommended)
+1. Open Settings tab
+2. Expand "API設定" section
+3. Select desired provider from dropdown
+4. Enter corresponding API key if needed
+5. Click "設定を保存"
+6. Restart the application
+
+### Method 2: Edit .env File
+1. Open `.env` file in project root
+2. Change `CHAT_API_PROVIDER` to `google` or `openai`
+3. Ensure the corresponding API key is set
+4. Save the file
+5. Restart the application
+
+### Method 3: Edit config.py
+1. Open `config/config.py`
+2. Locate the line: `CHAT_API_PROVIDER = os.environ.get('CHAT_API_PROVIDER', 'google')`
+3. Change the default value from `'google'` to `'openai'` (or vice versa)
+4. Save the file
+5. Restart the application
+
+## Comparison: Google Gemini vs OpenAI
+
+| Feature | Google Gemini | OpenAI |
+|---------|---------------|--------|
+| **Default Model** | gemini-2.5-pro | gpt-4-turbo |
+| **Context Window** | ~1M tokens | 128k tokens |
+| **Pricing** | Free tier available | Pay per token |
+| **API Library** | google-genai | openai |
+| **Best For** | Long context, free usage | General purpose, stability |
+
 ---
 
-**Version:** 3.0.0
-**Last Updated:** October 1, 2025
-**Security Note:** Keep your API key confidential. Never share it with others.
+**Version:** 3.1.0
+**Last Updated:** October 9, 2025
+**Security Note:** Keep your API keys confidential. Never share them or commit them to version control.

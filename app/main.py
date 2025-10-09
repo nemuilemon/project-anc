@@ -92,8 +92,10 @@ def main(page: ft.Page):
     cancel_event = Event()
 
     # Initialize AppState with persistence
+    from state_manager import app_state
     persistence_file = os.path.join(config.DATA_DIR, 'conversation_state.json')
-    app_state = AppState(persistence_file=persistence_file)
+    app_state._persistence_file = persistence_file
+    app_state.load_conversations(persistence_file)
     app_logger.main_logger.info(f"AppState initialized with persistence file: {persistence_file}")
 
     # Create centralized event handlers (app_ui will be set later)

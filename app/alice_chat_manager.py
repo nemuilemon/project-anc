@@ -14,6 +14,12 @@ from google.genai import types
 from state_manager import app_state
 import requests
 
+# OpenAI import (optional, will be None if not installed)
+try:
+    from openai import OpenAI
+except ImportError:
+    OpenAI = None
+
 class AliceChatManager:
     """Manages conversations with Alice using Gemini API.
 
@@ -32,6 +38,7 @@ class AliceChatManager:
         """
         self.config = config
         self.client = None
+        self.api_provider = getattr(config, 'CHAT_API_PROVIDER', 'google').lower()
         self.system_instruction = ""
         self.long_term_memory = ""
         self.max_history_length = getattr(config, 'ALICE_CHAT_CONFIG', {}).get('max_history_length', 50)
@@ -39,10 +46,6 @@ class AliceChatManager:
         # Dialog logs directory
         self.dialog_logs_dir = os.path.join(getattr(config, 'PROJECT_ROOT', '.'), "logs", "dialogs")
         os.makedirs(self.dialog_logs_dir, exist_ok=True)
-
-        # Initialize conversation in AppState
-        session_id = f"alice_session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-        app_state.init_conversation(session_id)
 
         # Initialize API client
         self._init_client()
@@ -52,20 +55,37 @@ class AliceChatManager:
         self._load_long_term_memory()
 
     def _init_client(self):
-        """Initialize the Gemini API client."""
+        """Initialize the API client based on configured provider."""
         try:
-            api_key = getattr(self.config, 'GEMINI_API_KEY', '')
-            if not api_key:
-                raise ValueError("GEMINI_API_KEY is not set in configuration")
+            if self.api_provider == 'google':
+                # Initialize Google Gemini client
+                api_key = getattr(self.config, 'GEMINI_API_KEY', '')
+                if not api_key:
+                    raise ValueError("GEMINI_API_KEY is not set in configuration")
 
-            # Set API key as environment variable for genai client
-            os.environ['GOOGLE_API_KEY'] = api_key
+                # Set API key as environment variable for genai client
+                os.environ['GOOGLE_API_KEY'] = api_key
 
-            self.client = genai.Client()
-            print("Gemini API client initialized successfully")
+                self.client = genai.Client()
+                print("Gemini API client initialized successfully")
+
+            elif self.api_provider == 'openai':
+                # Initialize OpenAI client
+                if OpenAI is None:
+                    raise ImportError("OpenAI library is not installed. Run: pip install openai")
+
+                api_key = getattr(self.config, 'OPENAI_API_KEY', '')
+                if not api_key:
+                    raise ValueError("OPENAI_API_KEY is not set in configuration")
+
+                self.client = OpenAI(api_key=api_key)
+                print("OpenAI API client initialized successfully")
+
+            else:
+                raise ValueError(f"Unknown API provider: {self.api_provider}")
 
         except Exception as e:
-            print(f"Failed to initialize Gemini API client: {e}")
+            print(f"Failed to initialize API client: {e}")
             self.client = None
 
     def _load_system_instruction(self):
@@ -172,7 +192,7 @@ class AliceChatManager:
             str: Alice's response message
         """
         if not self.client:
-            return "エラー: Gemini APIクライアントが初期化されていません。"
+            return f"エラー: {self.api_provider.upper()} APIクライアントが初期化されていません。"
 
         if not user_message or not user_message.strip():
             return "メッセージを入力してください。"
@@ -181,34 +201,13 @@ class AliceChatManager:
             # Add user message to AppState
             app_state.add_conversation_message('user', user_message.strip())
 
-            # Prepare conversation contents for API
-            contents = self._prepare_contents()
-
-            # Debug: Log contents structure (for development)
-            print(f"API Contents: {len(contents)} blocks prepared")
-            for i, content in enumerate(contents):
-                content_preview = content[:100].replace('\n', '\\n') + "..." if len(content) > 100 else content.replace('\n', '\\n')
-                print(f"  Block {i+1}: {content_preview}")
-
-            # Get model name from config
-            model_name = getattr(self.config, 'ALICE_CHAT_CONFIG', {}).get('model', 'gemini-2.0-flash-exp')
-
-            # Make API request
-            response = self.client.models.generate_content(
-                model=model_name,
-                config=types.GenerateContentConfig(
-                    system_instruction=self.system_instruction
-                ),
-                contents=contents
-            )
-
-            # Extract response text
-            response_text = response.text if hasattr(response, 'text') else str(response)
-
-            # Log the dialog (for debugging/API tracking)
-            self._log_dialog(contents, response_text)
-
-            # Note: Daily chat log is saved by the UI handler to avoid duplication
+            # Route to appropriate API handler
+            if self.api_provider == 'google':
+                response_text = self._send_message_gemini()
+            elif self.api_provider == 'openai':
+                response_text = self._send_message_openai()
+            else:
+                raise ValueError(f"Unknown API provider: {self.api_provider}")
 
             # Add Alice's response to AppState
             app_state.add_conversation_message('model', response_text)
@@ -221,15 +220,107 @@ class AliceChatManager:
         except Exception as e:
             error_message = f"申し訳ございません。エラーが発生しました: {str(e)}"
             print(f"Error in send_message: {e}")
-
-            # Log the error
-            self._log_dialog(contents if 'contents' in locals() else [], "", error=str(e))
-
             return error_message
+
+    def _send_message_gemini(self) -> str:
+        """Send message using Google Gemini API.
+
+        Returns:
+            str: Alice's response message
+        """
+        # Prepare conversation contents for API
+        contents = self._prepare_contents()
+
+        # Debug: Log contents structure (for development)
+        print(f"API Contents: {len(contents)} blocks prepared")
+        for i, content in enumerate(contents):
+            content_preview = content[:100].replace('\n', '\\n') + "..." if len(content) > 100 else content.replace('\n', '\\n')
+            print(f"  Block {i+1}: {content_preview}")
+
+        # Get model name from config
+        model_name = getattr(self.config, 'ALICE_CHAT_CONFIG', {}).get('gemini_model', 'gemini-2.5-pro')
+
+        # Make API request
+        response = self.client.models.generate_content(
+            model=model_name,
+            config=types.GenerateContentConfig(
+                system_instruction=self.system_instruction
+            ),
+            contents=contents
+        )
+
+        # Extract response text
+        response_text = response.text if hasattr(response, 'text') else str(response)
+
+        # Log the dialog (for debugging/API tracking)
+        self._log_dialog(contents, response_text)
+
+        return response_text
+
+    def _send_message_openai(self) -> str:
+        """Send message using OpenAI API.
+
+        Returns:
+            str: Alice's response message
+        """
+        # Prepare conversation contents
+        contents = self._prepare_contents()
+
+        # Convert contents to OpenAI messages format
+        messages = []
+
+        # Add system instruction as system message
+        if self.system_instruction:
+            messages.append({
+                "role": "system",
+                "content": self.system_instruction
+            })
+
+        # Add context blocks as system messages
+        history = app_state.get_conversation_messages()
+        for content in contents:
+            # Skip the last user message if it's already in history
+            if history and content.strip().startswith(history[-1]['content'][:50]):
+                continue
+            messages.append({
+                "role": "system",
+                "content": content
+            })
+
+        # Add conversation history from AppState
+        for msg in history:
+            messages.append({
+                "role": "user" if msg['role'] == 'user' else "assistant",
+                "content": msg['content']
+            })
+
+        # Debug: Log messages structure
+        print(f"OpenAI Messages: {len(messages)} messages prepared")
+        for i, msg in enumerate(messages):
+            content_preview = msg['content'][:100].replace('\n', '\\n') + "..." if len(msg['content']) > 100 else msg['content'].replace('\n', '\\n')
+            print(f"  Message {i+1} ({msg['role']}): {content_preview}")
+
+        # Get model name from config
+        model_name = getattr(self.config, 'ALICE_CHAT_CONFIG', {}).get('openai_model', 'gpt-4-turbo')
+
+        # Make API request
+        response = self.client.chat.completions.create(
+            model=model_name,
+            messages=messages
+        )
+
+        # Extract response text
+        response_text = response.choices[0].message.content
+
+        # Log the dialog (for debugging/API tracking)
+        self._log_dialog([str(messages)], response_text)
+
+        return response_text
 
     def _get_past_conversations_from_compass_api(self, query_text: str) -> Optional[str]:
         """
         compass-apiを使用して過去の関連会話履歴を取得する。
+        APIから返されるJSONデータを解析し、timestampとcontentのみを抽出して整形する。
         """
         # 設定を動的にリロード（最新の値を取得）
         import importlib
@@ -248,7 +339,7 @@ class AliceChatManager:
                 "config": {
                     "target": api_config.get("target", "content"),
                     "limit": api_config.get("limit", 3),
-                    "compress": api_config.get("compress", True)
+                    "compress": api_config.get("compress", False)  # 圧縮は使用しない
                 }
             }
 
@@ -260,14 +351,27 @@ class AliceChatManager:
             response = requests.post(compass_api_url, json=payload, timeout=90)
             response.raise_for_status()  # エラーがあれば例外を発生させる
 
-            # "関連する記憶は見つかりませんでした。" という応答でないことを確認
-            if "関連する記憶は見つかりませんでした" in response.text:
+            # JSONレスポンスをパース
+            data = response.json()
+            results = data.get("results", [])
+
+            if not results:
                 return None
 
-            return response.text.strip()
+            # timestampとcontentを抽出して整形
+            formatted_results = []
+            for result in results:
+                timestamp = result.get('timestamp', 'N/A')
+                content = result.get('content', '内容なし')
+                formatted_results.append(f"時刻: {timestamp}\n内容: {content}")
+
+            return "\n\n---\n\n".join(formatted_results)
 
         except requests.exceptions.RequestException as e:
             print(f"Error calling compass-api: {e}")
+            return None
+        except json.JSONDecodeError:
+            print("Error: Failed to decode JSON from compass-api response.")
             return None
         
     def _prepare_contents(self) -> List[str]:
@@ -455,4 +559,8 @@ class AliceChatManager:
         Returns:
             bool: True if available, False otherwise
         """
-        return self.client is not None and bool(getattr(self.config, 'GEMINI_API_KEY', ''))
+        if self.api_provider == 'google':
+            return self.client is not None and bool(getattr(self.config, 'GEMINI_API_KEY', ''))
+        elif self.api_provider == 'openai':
+            return self.client is not None and bool(getattr(self.config, 'OPENAI_API_KEY', ''))
+        return False

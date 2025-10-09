@@ -1236,8 +1236,11 @@ class SettingsTab(ft.Container):
         - その他の環境設定
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, on_settings_changed=None, **kwargs):
         super().__init__(**kwargs)
+
+        # 設定変更時のコールバック
+        self.on_settings_changed = on_settings_changed
 
         # 現在の設定値を読み込み
         self._load_current_settings()
@@ -1262,11 +1265,28 @@ class SettingsTab(ft.Container):
             label="フォントサイズ: {value}pt"
         )
 
-        # APIキー設定
-        self.api_key_field = ft.TextField(
+        # API Provider 選択
+        self.api_provider_dropdown = ft.Dropdown(
+            label="API Provider",
+            options=[
+                ft.dropdown.Option(key="google", text="Google Gemini"),
+                ft.dropdown.Option(key="openai", text="OpenAI")
+            ],
+            value=getattr(config, 'CHAT_API_PROVIDER', 'google')
+        )
+
+        # APIキー設定 (Gemini)
+        self.gemini_api_key_field = ft.TextField(
             label="Gemini API Key",
             password=True,
-            helper_text="AI機能を使用するにはAPIキーが必要です"
+            helper_text="Google Gemini APIのキー"
+        )
+
+        # APIキー設定 (OpenAI)
+        self.openai_api_key_field = ft.TextField(
+            label="OpenAI API Key",
+            password=True,
+            helper_text="OpenAI APIのキー"
         )
 
         # Compass API URL設定
@@ -1359,7 +1379,11 @@ class SettingsTab(ft.Container):
             "api",
             "API設定",
             ft.Icons.KEY,
-            [self.api_key_field]
+            [
+                self.api_provider_dropdown,
+                self.gemini_api_key_field,
+                self.openai_api_key_field
+            ]
         )
 
         self.alice_section = self._create_expandable_section(
@@ -1477,7 +1501,8 @@ class SettingsTab(ft.Container):
             self.content.controls[1].content.controls[1] = self.editor_section
         elif section_key == "api":
             self.api_section = self._create_expandable_section(
-                "api", "API設定", ft.Icons.KEY, [self.api_key_field]
+                "api", "API設定", ft.Icons.KEY,
+                [self.api_provider_dropdown, self.gemini_api_key_field, self.openai_api_key_field]
             )
             self.content.controls[1].content.controls[2] = self.api_section
         elif section_key == "alice":
@@ -1556,13 +1581,29 @@ class SettingsTab(ft.Container):
                 "search_mode": self.compass_search_mode_dropdown.value
             }
 
+            # API Provider の値を取得
+            api_provider = self.api_provider_dropdown.value
+
             # config.py ファイルを書き換えて永続化
             self._update_config_file(config_file, char_limit, compass_api_url, compass_config)
 
+            # .env ファイルを更新してAPIキーと設定を保存
+            self._update_env_file(api_provider)
+
+            # 設定変更コールバックを呼び出す（AliceChatManagerの再初期化）
+            reload_success = False
+            if self.on_settings_changed:
+                reload_success = self.on_settings_changed()
+
             # 成功メッセージを表示
             if hasattr(self, 'page') and self.page:
+                if reload_success:
+                    message = "設定を保存し、反映しました。"
+                else:
+                    message = "設定を保存しました。反映にはアプリの再起動が必要な場合があります。"
+
                 self.page.snack_bar = ft.SnackBar(
-                    content=ft.Text("設定を保存しました。反映にはアプリの再起動が必要な場合があります。"),
+                    content=ft.Text(message),
                     bgcolor=ft.Colors.GREEN
                 )
                 self.page.snack_bar.open = True
@@ -1621,4 +1662,51 @@ class SettingsTab(ft.Container):
 
         except Exception as ex:
             print(f"設定ファイルの更新中にエラーが発生しました: {ex}")
+            raise
+
+    def _update_env_file(self, api_provider):
+        """.env ファイルを更新してAPIキーと設定を保存"""
+        try:
+            # .env ファイルのパス
+            project_root = os.path.dirname(os.path.dirname(__file__))
+            env_file = os.path.join(project_root, '.env')
+
+            # 既存の .env ファイルを読み込み
+            env_vars = {}
+            if os.path.exists(env_file):
+                with open(env_file, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith('#') and '=' in line:
+                            key, value = line.split('=', 1)
+                            env_vars[key.strip()] = value.strip()
+
+            # API Provider を更新
+            env_vars['CHAT_API_PROVIDER'] = api_provider
+
+            # APIキーを更新（空でない場合のみ）
+            if self.gemini_api_key_field.value:
+                env_vars['GEMINI_API_KEY'] = self.gemini_api_key_field.value
+            if self.openai_api_key_field.value:
+                env_vars['OPENAI_API_KEY'] = self.openai_api_key_field.value
+
+            # .env ファイルに書き込み
+            with open(env_file, 'w', encoding='utf-8') as f:
+                f.write("# Project A.N.C. Environment Variables\n")
+                f.write("# Updated via Settings UI\n\n")
+                f.write(f"# API Provider (google or openai)\n")
+                f.write(f"CHAT_API_PROVIDER={env_vars.get('CHAT_API_PROVIDER', 'google')}\n\n")
+                f.write(f"# Google Gemini API Key\n")
+                f.write(f"GEMINI_API_KEY={env_vars.get('GEMINI_API_KEY', '')}\n\n")
+                f.write(f"# OpenAI API Key\n")
+                f.write(f"OPENAI_API_KEY={env_vars.get('OPENAI_API_KEY', '')}\n\n")
+                # 他の既存の環境変数も保持
+                for key, value in env_vars.items():
+                    if key not in ['CHAT_API_PROVIDER', 'GEMINI_API_KEY', 'OPENAI_API_KEY']:
+                        f.write(f"{key}={value}\n")
+
+            print(f".env file updated successfully")
+
+        except Exception as ex:
+            print(f".env ファイルの更新中にエラーが発生しました: {ex}")
             raise

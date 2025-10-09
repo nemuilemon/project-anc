@@ -51,7 +51,8 @@ class MainConversationArea(ft.Container):
         self.message_input = ft.TextField(
             hint_text="アリスに話しかけてください...",
             multiline=True,
-            shift_enter=True,
+            min_lines=1,
+            max_lines=5,
             on_submit=self._send_message,
             border=ft.InputBorder.OUTLINE,
             filled=True,
@@ -152,8 +153,7 @@ class MainConversationArea(ft.Container):
                 padding=ft.padding.all(15),
                 bgcolor=ft.Colors.GREY_50,
                 border_radius=10,
-                margin=ft.margin.symmetric(horizontal=10, vertical=5),
-                height=80  # デバッグ用: 明示的な高さ
+                margin=ft.margin.symmetric(horizontal=10, vertical=5)
             )
         ], expand=True)
 
@@ -291,6 +291,9 @@ class MainConversationArea(ft.Container):
                 self.conversation_views[active_id].controls.clear()
                 self.conversation_views[active_id].update()
 
+            # 変更を永続化
+            self.app_state.save_conversations()
+
     def _export_chat(self, e=None):
         """会話をエクスポート（将来実装）"""
         # TODO: 会話履歴をファイルに保存
@@ -405,7 +408,26 @@ class MainConversationArea(ft.Container):
         )
         self.conversation_views[session_id] = list_view
 
-        # タブを作成（閉じるボタン付き）
+        # タブタイトル編集用のテキストフィールド
+        title_textfield = ft.TextField(
+            value=title,
+            text_size=14,
+            border=ft.InputBorder.NONE,
+            content_padding=ft.padding.all(0),
+            dense=True,
+            visible=False,
+            on_submit=lambda e, sid=session_id: self._finish_title_edit(sid, e.control.value),
+            on_blur=lambda e, sid=session_id: self._finish_title_edit(sid, e.control.value)
+        )
+
+        # タブタイトル表示用のテキスト
+        title_text = ft.Text(
+            title,
+            size=14,
+            no_wrap=True
+        )
+
+        # 閉じるボタン
         close_button = ft.IconButton(
             icon=ft.Icons.CLOSE,
             icon_size=16,
@@ -419,10 +441,27 @@ class MainConversationArea(ft.Container):
         )
 
         # タブのテキスト部分にタイトルと閉じるボタンを配置
+        # ダブルクリックでタイトル編集を開始
+        title_gesture = ft.GestureDetector(
+            content=ft.Stack([
+                title_text,
+                title_textfield
+            ]),
+            on_double_tap=lambda e, sid=session_id: self._start_title_edit(sid)
+        )
+
         tab.tab_content = ft.Row([
-            ft.Text(title, size=14),
+            title_gesture,
             close_button
         ], spacing=5)
+
+        # タブコンポーネントへの参照を保存（編集時に使用）
+        if not hasattr(self, '_tab_components'):
+            self._tab_components = {}
+        self._tab_components[session_id] = {
+            'title_text': title_text,
+            'title_textfield': title_textfield
+        }
 
         self.conversation_tabs.tabs.append(tab)
 
@@ -495,6 +534,9 @@ class MainConversationArea(ft.Container):
         if active_id:
             self._switch_to_conversation(active_id)
 
+        # 変更を永続化
+        self.app_state.save_conversations()
+
         if self.page:
             self.update()
 
@@ -513,6 +555,9 @@ class MainConversationArea(ft.Container):
         # 新しい会話に切り替え
         self._switch_to_conversation(session_id)
 
+        # 変更を永続化
+        self.app_state.save_conversations()
+
         if self.page:
             self.update()
 
@@ -520,6 +565,67 @@ class MainConversationArea(ft.Container):
         """ファイル添付（将来実装）"""
         # TODO: ファイル選択ダイアログ
         pass
+
+    def _start_title_edit(self, session_id: str):
+        """タイトル編集モードを開始"""
+        if session_id not in self._tab_components:
+            return
+
+        components = self._tab_components[session_id]
+        title_text = components['title_text']
+        title_textfield = components['title_textfield']
+
+        # テキストフィールドに現在のタイトルを設定
+        title_textfield.value = title_text.value
+
+        # テキスト表示を非表示、テキストフィールドを表示
+        title_text.visible = False
+        title_textfield.visible = True
+
+        if self.page:
+            title_textfield.update()
+            title_text.update()
+            # テキストフィールドにフォーカス
+            title_textfield.focus()
+
+    def _finish_title_edit(self, session_id: str, new_title: str):
+        """タイトル編集を完了"""
+        if session_id not in self._tab_components:
+            return
+
+        # 空のタイトルは許可しない
+        new_title = new_title.strip()
+        if not new_title:
+            new_title = "無題の会話"
+
+        components = self._tab_components[session_id]
+        title_text = components['title_text']
+        title_textfield = components['title_textfield']
+
+        # タイトルを更新
+        title_text.value = new_title
+
+        # テキストフィールドを非表示、テキスト表示を表示
+        title_textfield.visible = False
+        title_text.visible = True
+
+        # AppStateのタイトルを更新
+        if self.app_state:
+            self.app_state.update_conversation_title(session_id, new_title)
+            # 変更を永続化
+            self.app_state.save_conversations()
+
+        # タブのテキストも更新
+        for i, tab in enumerate(self.conversation_tabs.tabs):
+            conversations = list(self.conversation_views.keys())
+            if i < len(conversations) and conversations[i] == session_id:
+                tab.text = new_title
+                break
+
+        if self.page:
+            title_text.update()
+            title_textfield.update()
+            self.conversation_tabs.update()
 
 
 class AuxiliaryToolsSidebar(ft.Container):
@@ -535,13 +641,14 @@ class AuxiliaryToolsSidebar(ft.Container):
         - 設定タブ: アプリケーション設定
     """
 
-    def __init__(self, on_file_operations=None, on_save_file=None, available_ai_functions=None, on_run_analysis=None, memory_creation_manager=None, memories_dir=None, nippo_creation_manager=None, nippo_dir=None, **kwargs):
+    def __init__(self, on_file_operations=None, on_save_file=None, available_ai_functions=None, on_run_analysis=None, memory_creation_manager=None, memories_dir=None, nippo_creation_manager=None, nippo_dir=None, on_settings_changed=None, **kwargs):
         super().__init__(**kwargs)
 
         # コールバック関数
         self.on_file_operations = on_file_operations or {}
         self.on_save_file = on_save_file
         self.on_run_analysis = on_run_analysis
+        self.on_settings_changed = on_settings_changed
 
         # 各タブコンポーネントを作成
         self.file_tab = FileTab(
@@ -560,7 +667,7 @@ class AuxiliaryToolsSidebar(ft.Container):
             on_run_analysis=on_run_analysis
         )
 
-        self.settings_tab = SettingsTab()
+        self.settings_tab = SettingsTab(on_settings_changed=on_settings_changed)
 
         self.memory_creation_tab = MemoryCreationTab(
             memory_creation_manager=memory_creation_manager,
@@ -668,7 +775,7 @@ class ConversationFirstUI(ft.Row):
     def __init__(self, page: ft.Page, on_send_message=None, alice_chat_manager=None,
                  on_file_operations=None, on_save_file=None, available_ai_functions=None,
                  on_run_analysis=None, memory_creation_manager=None, memories_dir=None,
-                 nippo_creation_manager=None, nippo_dir=None, app_state=None, **kwargs):
+                 nippo_creation_manager=None, nippo_dir=None, app_state=None, on_settings_changed=None, **kwargs):
         super().__init__(**kwargs)
 
         self.page = page
@@ -687,6 +794,7 @@ class ConversationFirstUI(ft.Row):
             available_ai_functions=available_ai_functions,
             on_run_analysis=on_run_analysis,
             memory_creation_manager=memory_creation_manager,
+            on_settings_changed=on_settings_changed,
             memories_dir=memories_dir,
             nippo_creation_manager=nippo_creation_manager,
             nippo_dir=nippo_dir
@@ -730,6 +838,7 @@ class RedesignedAppUI:
 
         self.page = page
         self.app_state = app_state
+        self.config = config  # 設定を保存（再初期化用）
 
         # 既存のコールバック関数を保存
         self.callbacks = {
@@ -800,12 +909,49 @@ class RedesignedAppUI:
             memories_dir=self.memories_dir,
             nippo_creation_manager=self.nippo_creation_manager,
             nippo_dir=self.nippo_dir,
-            app_state=app_state
+            app_state=app_state,
+            on_settings_changed=self.reinitialize_alice_chat_manager
         )
 
     def build(self):
         """UIコンポーネントを構築して返す"""
         return self.ui
+
+    def reinitialize_alice_chat_manager(self):
+        """AliceChatManagerを再初期化する（設定変更後に呼び出す）"""
+        try:
+            # .envファイルと設定を再読み込み
+            import importlib
+            from pathlib import Path
+            from dotenv import load_dotenv
+
+            # .envファイルを再読み込み
+            env_file = Path(self.config.PROJECT_ROOT) / '.env'
+            if env_file.exists():
+                load_dotenv(env_file, override=True)
+                print(f"[ReloadConfig] .env file reloaded from: {env_file}")
+
+            # configモジュールを再読み込み
+            importlib.reload(self.config)
+            print(f"[ReloadConfig] Config module reloaded")
+
+            # AliceChatManagerを再初期化
+            old_manager = self.alice_chat_manager
+            self.alice_chat_manager = AliceChatManager(self.config)
+
+            # UIの参照も更新
+            self.ui.conversation_area.alice_chat_manager = self.alice_chat_manager
+
+            print(f"[ReloadConfig] AliceChatManager reinitialized successfully")
+            print(f"[ReloadConfig] New API provider: {self.config.CHAT_API_PROVIDER}")
+
+            return True
+
+        except Exception as e:
+            print(f"[ReloadConfig] Failed to reinitialize AliceChatManager: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
 
     def _read_file(self, file_info):
         """ファイル内容を読み込む（既存のロジックを活用）"""
@@ -840,6 +986,10 @@ class RedesignedAppUI:
                 # チャットログを保存（ハンドラー経由）
                 if self.callbacks['on_send_chat_message']:
                     self.callbacks['on_send_chat_message'](message, response)
+
+                # 会話状態を永続化ファイルに保存
+                if self.app_state:
+                    self.app_state.save_conversations()
 
             except Exception as e:
                 print(f"Error in chat message handling: {e}")

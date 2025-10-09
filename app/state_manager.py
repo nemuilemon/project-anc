@@ -203,8 +203,12 @@ class AppState:
 
             # Generate default title if not provided
             if not title:
-                conversation_count = len(self._conversations) + 1
-                title = f"会話 {conversation_count}"
+                # First conversation is always "main"
+                if len(self._conversations) == 0:
+                    title = "main"
+                else:
+                    conversation_count = len(self._conversations) + 1
+                    title = f"会話 {conversation_count}"
 
             self._conversations[session_id] = ConversationState(
                 session_id=session_id,
@@ -307,8 +311,8 @@ class AppState:
             conversation.messages.append(message)
             conversation.last_message_at = datetime.now()
 
-            # Update title from first user message if still default
-            if conversation.title.startswith("会話") and role == 'user' and len(conversation.messages) <= 2:
+            # Update title from first user message if still default (but not "main")
+            if conversation.title.startswith("会話") and conversation.title != "main" and role == 'user' and len(conversation.messages) <= 2:
                 # Use first 20 characters of user message as title
                 conversation.title = content[:20] + ("..." if len(content) > 20 else "")
 
@@ -355,6 +359,18 @@ class AppState:
             if target_id:
                 return self._conversations.get(target_id)
             return None
+
+    def update_conversation_title(self, session_id: str, new_title: str) -> None:
+        """Update the title of a conversation.
+
+        Args:
+            session_id: The session ID to update
+            new_title: The new title for the conversation
+        """
+        with self._lock:
+            if session_id in self._conversations:
+                self._conversations[session_id].title = new_title
+                self._notify_observers('conversation_updated', {'session_id': session_id, 'title': new_title})
 
     # UI State Management
 

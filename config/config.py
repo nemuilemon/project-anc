@@ -11,7 +11,23 @@
 
 # プロジェクトルートディレクトリの取得
 import os
+from pathlib import Path
+
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# .env ファイルを自動的に読み込む
+try:
+    from dotenv import load_dotenv
+    env_file = Path(PROJECT_ROOT) / '.env'
+    if env_file.exists():
+        load_dotenv(env_file)
+        print(f"[Config] .env file loaded from: {env_file}")
+    else:
+        print(f"[Config] .env file not found at: {env_file}")
+except ImportError:
+    print("[Config] python-dotenv not installed. Environment variables must be set manually.")
+except Exception as e:
+    print(f"[Config] Error loading .env file: {e}")
 
 # データファイルを保存するメインディレクトリ
 DATA_DIR = os.path.join(PROJECT_ROOT, "data")
@@ -51,8 +67,14 @@ MODEL_DESCRIPTIONS = {
 
 # =================== Alice Chat 設定 ===================
 
+# API Provider - "google" または "openai" を指定
+CHAT_API_PROVIDER = os.environ.get('CHAT_API_PROVIDER', 'google')
+
 # Gemini API Key - 環境変数から読み込み（セキュリティのため）
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
+
+# OpenAI API Key - 環境変数から読み込み（セキュリティのため）
+OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY', '')
 
 # Aliceシステムプロンプトファイルのパス
 ALICE_SYSTEM_PROMPT_PATH = os.path.join(NOTES_DIR, "0-System-Prompt.md")
@@ -83,11 +105,12 @@ CHAT_LOGS_DIR = os.path.join(DATA_DIR, "chat_logs")
 COMPASS_API_URL = "http://127.0.0.1:8000/search"
 
 # Compass API リクエスト設定
-COMPASS_API_CONFIG = {"target": "summary", "limit": 3, "compress": False, "search_mode": "latest"}
+COMPASS_API_CONFIG = {"target": "summary", "limit": 5, "compress": False, "search_mode": "latest"}
 
 # Alice Chat 設定
 ALICE_CHAT_CONFIG = {
-    "model": "gemini-2.5-pro",  # デフォルトのGeminiモデル
+    "gemini_model": "gemini-2.5-pro",  # Google Geminiモデル
+    "openai_model": "gpt-5",  # OpenAIモデル
     "max_history_length": 500,  # 保持する会話履歴の最大件数
     "auto_save_interval": 30,  # 自動保存間隔（秒）
     "history_char_limit": 1000,  # 過去のログから読み込む文字数制限
