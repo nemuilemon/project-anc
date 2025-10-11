@@ -175,7 +175,7 @@ class AliceChatManager:
                 f.write(f"\n## {timestamp}\n\n")
                 f.write(f"**ご主人様:**\n{user_message}\n\n")
                 f.write(f"**ありす:**\n{alice_response}\n\n")
-                f.write("---\n")
+                f.write("---------\n")
 
             print(f"Conversation saved to: {log_file_path}")
 
@@ -276,14 +276,14 @@ class AliceChatManager:
                 "content": self.system_instruction
             })
 
-        # Add context blocks as system messages
+        # Add context blocks as user messages
         history = app_state.get_conversation_messages()
         for content in contents:
             # Skip the last user message if it's already in history
             if history and content.strip().startswith(history[-1]['content'][:50]):
                 continue
             messages.append({
-                "role": "system",
+                "role": "user",
                 "content": content
             })
 
@@ -301,7 +301,7 @@ class AliceChatManager:
             print(f"  Message {i+1} ({msg['role']}): {content_preview}")
 
         # Get model name from config
-        model_name = getattr(self.config, 'ALICE_CHAT_CONFIG', {}).get('openai_model', 'gpt-4-turbo')
+        model_name = getattr(self.config, 'ALICE_CHAT_CONFIG', {}).get('openai_model', 'gpt-5')
 
         # Make API request
         response = self.client.chat.completions.create(

@@ -113,5 +113,5 @@ ALICE_CHAT_CONFIG = {
     "openai_model": "gpt-5",  # OpenAIモデル
     "max_history_length": 500,  # 保持する会話履歴の最大件数
     "auto_save_interval": 30,  # 自動保存間隔（秒）
-    "history_char_limit": 1000,  # 過去のログから読み込む文字数制限
+    "history_char_limit": 4000,  # 過去のログから読み込む文字数制限
 }
