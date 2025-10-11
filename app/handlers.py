@@ -739,7 +739,7 @@ class AppHandlers:
 **ありす:**
 {alice_response}
 
----
+---------
 
 """
 
