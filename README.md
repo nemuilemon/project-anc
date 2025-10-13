@@ -2,10 +2,19 @@
 
 🧠 **AI-Powered Note-Taking and Content Analysis System**
 
-[![Version](https://img.shields.io/badge/version-2.0.0-blue.svg)](https://github.com/project-anc)
+[![Version](https://img.shields.io/badge/version-3.1.1-blue.svg)](https://github.com/project-anc)
 [![Python](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://python.org)
 [![Flet](https://img.shields.io/badge/flet-0.28.3-green.svg)](https://flet.dev)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+
+## 🎉 What's New in v3.1.1
+
+- 🏷️ **Tag Editing UI**: Full tag management with add/remove functionality in file context menu
+- ⚙️ **Enhanced Settings**: Numeric text fields replace sliders for better control (accepts 0 and positive integers)
+- 🔧 **Configuration Migration**: All settings now stored in `.env` file for easier management
+- 📝 **Environment Variables**: Dynamic configuration with `ALICE_HISTORY_CHAR_LIMIT`, `COMPASS_API_*` variables
+
+See [CHANGELOG.md](CHANGELOG.md) for complete release notes.
 
 ## ✨ Features
 
@@ -262,13 +271,22 @@ See the [Plugin Development Guide](docs/PLUGIN_DEVELOPMENT_GUIDE.md) for detaile
 
 ## 🗺️ Roadmap
 
-### ✅ Completed (v2.0.0 - September 2025)
+### ✅ Completed (v3.1.1 - October 2025)
+- Tag editing UI with full CRUD operations
+- Text input fields for settings (replaced sliders)
+- Complete .env file migration for all dynamic settings
+- Environment variable support in config.py
+- Multi-conversation tab management with persistence
+- OpenAI integration alongside Google Gemini
+
+### ✅ Completed (v3.0.0 - September 2025)
 - Modular AI analysis system with real Ollama integration
-- Plugin-based architecture for unlimited extensibility
+- Plugin-based architecture with auto-discovery
+- Centralized state management
 - Comprehensive security and error handling
 - Full virtual environment testing validation
 
-### 🔄 In Progress (v2.1.0 - Q4 2025)
+### 🔄 In Progress (v3.2.0 - Q4 2025)
 - **Additional AI Plugins**: Language detection, readability analysis
 - **UI Enhancements**: Dark mode, customizable themes
 - **Export Features**: PDF export, HTML conversion

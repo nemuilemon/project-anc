@@ -789,6 +789,7 @@ class FileTab(ft.Container):
                     items=[
                         ft.PopupMenuItem(text="開く", on_click=lambda e, f=file_info: self._select_file(f)),
                         ft.PopupMenuItem(text="名前変更", on_click=lambda e, f=file_info: self._rename_file(f)),
+                        ft.PopupMenuItem(text="タグ編集", on_click=lambda e, f=file_info: self._edit_tags(f)),
                         ft.PopupMenuItem(),  # Separator
                         ft.PopupMenuItem(text="削除", on_click=lambda e, f=file_info: self._delete_file(f))
                     ]
@@ -831,6 +832,127 @@ class FileTab(ft.Container):
         """ファイル削除"""
         if self.on_file_delete:
             self.on_file_delete(file_info)
+
+    def _edit_tags(self, file_info: Dict):
+        """タグ編集ダイアログを表示"""
+        file_path = file_info.get('path', '')
+        file_name = file_info.get('title', 'Unknown')
+        current_tags = file_info.get('tags', []).copy()  # Create a copy to avoid modifying original
+
+        # Tag chips container
+        tag_chips_row = ft.Row(wrap=True, spacing=5)
+
+        def update_tag_chips():
+            """Update the display of tag chips"""
+            tag_chips_row.controls.clear()
+            for tag in current_tags:
+                chip = ft.Container(
+                    content=ft.Row([
+                        ft.Text(tag, size=12, color=ft.Colors.WHITE),
+                        ft.IconButton(
+                            icon=ft.Icons.CLOSE,
+                            icon_size=14,
+                            icon_color=ft.Colors.WHITE,
+                            tooltip="削除",
+                            on_click=lambda e, t=tag: remove_tag(t)
+                        )
+                    ], spacing=2, tight=True),
+                    bgcolor=ft.Colors.BLUE_700,
+                    padding=ft.padding.symmetric(horizontal=8, vertical=4),
+                    border_radius=15
+                )
+                tag_chips_row.controls.append(chip)
+            tag_chips_row.update()
+
+        def remove_tag(tag):
+            """Remove a tag from the list"""
+            if tag in current_tags:
+                current_tags.remove(tag)
+                update_tag_chips()
+
+        def add_tag(e=None):
+            """Add a new tag"""
+            new_tag = new_tag_field.value.strip()
+            if new_tag and new_tag not in current_tags:
+                current_tags.append(new_tag)
+                new_tag_field.value = ""
+                new_tag_field.update()
+                update_tag_chips()
+
+        def save_tags(e):
+            """Save the updated tags"""
+            # Call the handler with the updated tag list
+            if hasattr(self, 'page') and self.page:
+                # Import handler at runtime to avoid circular dependency
+                from handlers import AppHandlers
+                # Get the handlers instance from page data if available
+                if hasattr(self.page, 'data') and 'handlers' in self.page.data:
+                    handlers = self.page.data['handlers']
+                    handlers.handle_update_tags(file_path, current_tags)
+
+            # Update local file info
+            file_info['tags'] = current_tags.copy()
+
+            # Refresh the file display
+            self._update_file_display()
+
+            # Close dialog
+            dialog.open = False
+            self.page.update()
+
+        def close_dialog(e):
+            """Close the dialog without saving"""
+            dialog.open = False
+            self.page.update()
+
+        # New tag input field
+        new_tag_field = ft.TextField(
+            label="新しいタグ",
+            hint_text="タグ名を入力してEnter",
+            dense=True,
+            on_submit=add_tag,
+            expand=True
+        )
+
+        add_tag_button = ft.IconButton(
+            icon=ft.Icons.ADD,
+            tooltip="タグを追加",
+            on_click=add_tag
+        )
+
+        # Create dialog
+        dialog = ft.AlertDialog(
+            title=ft.Text(f"タグ編集: {file_name}"),
+            content=ft.Container(
+                content=ft.Column([
+                    ft.Text("現在のタグ:", weight=ft.FontWeight.BOLD, size=12),
+                    ft.Container(
+                        content=tag_chips_row if current_tags else ft.Text("タグなし", color=ft.Colors.GREY_600, size=12),
+                        padding=ft.padding.all(10),
+                        border=ft.border.all(1, ft.Colors.GREY_300),
+                        border_radius=5,
+                        min_height=60
+                    ),
+                    ft.Divider(),
+                    ft.Row([new_tag_field, add_tag_button], spacing=5)
+                ], spacing=10, tight=True),
+                width=400
+            ),
+            actions=[
+                ft.TextButton("キャンセル", on_click=close_dialog),
+                ft.ElevatedButton("保存", on_click=save_tags)
+            ],
+            actions_alignment=ft.MainAxisAlignment.END
+        )
+
+        # Initialize tag chips
+        update_tag_chips()
+
+        # Show dialog
+        if hasattr(self, 'page') and self.page:
+            self.page.overlay.append(dialog)
+            dialog.open = True
+            self.page.update()
 
 
 class EditorArea(ft.Container):
@@ -1305,12 +1427,13 @@ class SettingsTab(ft.Container):
             ],
             value=getattr(self, '_initial_compass_target', 'content')
         )
-        self.compass_limit_slider = ft.Slider(
-            min=1,
-            max=10,
-            divisions=9,
-            value=getattr(self, '_initial_compass_limit', 3),
-            label="取得件数 (limit): {value}件"
+        self.compass_limit_field = ft.TextField(
+            label="取得件数 (limit)",
+            hint_text="0以上の整数を入力",
+            value=str(getattr(self, '_initial_compass_limit', 5)),
+            keyboard_type=ft.KeyboardType.NUMBER,
+            dense=True,
+            width=200
         )
         self.compass_compress_switch = ft.Switch(
             label="結果を要約する (compress)",
@@ -1326,19 +1449,14 @@ class SettingsTab(ft.Container):
         )
 
         # Alice会話設定
-        self.history_char_limit_slider = ft.Slider(
-            min=1000,
-            max=10000,
-            divisions=90,  # (10000-1000)/100 = 90 divisions for 100-character steps
-            value=getattr(self, '_initial_char_limit', 4000),
-            label="履歴文字数: {value}",
-            on_change=self._on_history_char_limit_change
-        )
-
-        self.history_char_limit_text = ft.Text(
-            f"履歴文字数: {getattr(self, '_initial_char_limit', 4000)}",
-            size=12,
-            color=ft.Colors.GREY_700
+        self.history_char_limit_field = ft.TextField(
+            label="会話履歴文字数",
+            hint_text="0以上の整数を入力",
+            value=str(getattr(self, '_initial_char_limit', 4000)),
+            keyboard_type=ft.KeyboardType.NUMBER,
+            dense=True,
+            width=200,
+            helper_text="過去の会話ログから読み込む文字数"
         )
 
         # 設定保存ボタン
@@ -1391,9 +1509,7 @@ class SettingsTab(ft.Container):
             "Aliceとの会話",
             ft.Icons.CHAT,
             [
-                ft.Text("会話履歴の文字数"),
-                self.history_char_limit_slider,
-                self.history_char_limit_text
+                self.history_char_limit_field
             ]
         )
 
@@ -1404,7 +1520,7 @@ class SettingsTab(ft.Container):
             [
                 self.compass_api_url_field,
                 self.compass_target_dropdown,
-                self.compass_limit_slider,
+                self.compass_limit_field,
                 self.compass_compress_switch,
                 self.compass_search_mode_dropdown
             ]
@@ -1508,7 +1624,7 @@ class SettingsTab(ft.Container):
         elif section_key == "alice":
             self.alice_section = self._create_expandable_section(
                 "alice", "Aliceとの会話", ft.Icons.CHAT,
-                [ft.Text("会話履歴の文字数"), self.history_char_limit_slider, self.history_char_limit_text]
+                [self.history_char_limit_field]
             )
             self.content.controls[1].content.controls[3] = self.alice_section
         elif section_key == "compass_api":
@@ -1517,7 +1633,7 @@ class SettingsTab(ft.Container):
                 [
                     self.compass_api_url_field,
                     self.compass_target_dropdown,
-                    self.compass_limit_slider,
+                    self.compass_limit_field,
                     self.compass_compress_switch,
                     self.compass_search_mode_dropdown
                 ]
@@ -1556,12 +1672,6 @@ class SettingsTab(ft.Container):
             self._initial_compass_compress = True
             self._initial_compass_search_mode = 'latest'
 
-    def _on_history_char_limit_change(self, e):
-        """会話履歴文字数スライダーの値が変更された時の処理"""
-        value = int(e.control.value)
-        self.history_char_limit_text.value = f"履歴文字数: {value}"
-        self.history_char_limit_text.update()
-
     def _save_settings(self, e=None):
         """設定を保存"""
         try:
@@ -1569,14 +1679,26 @@ class SettingsTab(ft.Container):
             config_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'config')
             config_file = os.path.join(config_dir, 'config.py')
 
-            # history_char_limit の値を取得
-            char_limit = int(self.history_char_limit_slider.value)
+            # history_char_limit の値を取得（検証付き）
+            try:
+                char_limit = int(self.history_char_limit_field.value)
+                if char_limit < 0:
+                    raise ValueError("負の値は許可されていません")
+            except ValueError as ve:
+                raise ValueError(f"会話履歴文字数は0以上の整数で入力してください: {str(ve)}")
 
-            # Compass API の値を取得
+            # Compass API の値を取得（検証付き）
             compass_api_url = self.compass_api_url_field.value
+            try:
+                compass_limit = int(self.compass_limit_field.value)
+                if compass_limit < 0:
+                    raise ValueError("負の値は許可されていません")
+            except ValueError as ve:
+                raise ValueError(f"取得件数は0以上の整数で入力してください: {str(ve)}")
+
             compass_config = {
                 "target": self.compass_target_dropdown.value,
-                "limit": int(self.compass_limit_slider.value),
+                "limit": compass_limit,
                 "compress": self.compass_compress_switch.value,
                 "search_mode": self.compass_search_mode_dropdown.value
             }
@@ -1584,11 +1706,8 @@ class SettingsTab(ft.Container):
             # API Provider の値を取得
             api_provider = self.api_provider_dropdown.value
 
-            # config.py ファイルを書き換えて永続化
-            self._update_config_file(config_file, char_limit, compass_api_url, compass_config)
-
-            # .env ファイルを更新してAPIキーと設定を保存
-            self._update_env_file(api_provider)
+            # .env ファイルに全ての設定を保存
+            self._update_env_file(api_provider, char_limit, compass_api_url, compass_config)
 
             # 設定変更コールバックを呼び出す（AliceChatManagerの再初期化）
             reload_success = False
@@ -1664,8 +1783,8 @@ class SettingsTab(ft.Container):
             print(f"設定ファイルの更新中にエラーが発生しました: {ex}")
             raise
 
-    def _update_env_file(self, api_provider):
-        """.env ファイルを更新してAPIキーと設定を保存"""
+    def _update_env_file(self, api_provider, char_limit, compass_api_url, compass_config):
+        """.env ファイルを更新してAPIキーと全ての設定を保存"""
         try:
             # .env ファイルのパス
             project_root = os.path.dirname(os.path.dirname(__file__))
@@ -1690,22 +1809,51 @@ class SettingsTab(ft.Container):
             if self.openai_api_key_field.value:
                 env_vars['OPENAI_API_KEY'] = self.openai_api_key_field.value
 
+            # Alice Chat設定を更新
+            env_vars['ALICE_HISTORY_CHAR_LIMIT'] = str(char_limit)
+
+            # Compass API設定を更新
+            env_vars['COMPASS_API_URL'] = compass_api_url
+            env_vars['COMPASS_API_TARGET'] = compass_config.get('target', 'content')
+            env_vars['COMPASS_API_LIMIT'] = str(compass_config.get('limit', 5))
+            env_vars['COMPASS_API_COMPRESS'] = str(compass_config.get('compress', True))
+            env_vars['COMPASS_API_SEARCH_MODE'] = compass_config.get('search_mode', 'latest')
+
             # .env ファイルに書き込み
             with open(env_file, 'w', encoding='utf-8') as f:
                 f.write("# Project A.N.C. Environment Variables\n")
                 f.write("# Updated via Settings UI\n\n")
-                f.write(f"# API Provider (google or openai)\n")
+
+                f.write("# API Provider (google or openai)\n")
                 f.write(f"CHAT_API_PROVIDER={env_vars.get('CHAT_API_PROVIDER', 'google')}\n\n")
-                f.write(f"# Google Gemini API Key\n")
+
+                f.write("# Google Gemini API Key\n")
                 f.write(f"GEMINI_API_KEY={env_vars.get('GEMINI_API_KEY', '')}\n\n")
-                f.write(f"# OpenAI API Key\n")
+
+                f.write("# OpenAI API Key\n")
                 f.write(f"OPENAI_API_KEY={env_vars.get('OPENAI_API_KEY', '')}\n\n")
+
+                f.write("# Alice Chat Configuration\n")
+                f.write(f"ALICE_HISTORY_CHAR_LIMIT={env_vars.get('ALICE_HISTORY_CHAR_LIMIT', '4000')}\n\n")
+
+                f.write("# Compass API Configuration\n")
+                f.write(f"COMPASS_API_URL={env_vars.get('COMPASS_API_URL', 'http://127.0.0.1:8000/search')}\n")
+                f.write(f"COMPASS_API_TARGET={env_vars.get('COMPASS_API_TARGET', 'content')}\n")
+                f.write(f"COMPASS_API_LIMIT={env_vars.get('COMPASS_API_LIMIT', '5')}\n")
+                f.write(f"COMPASS_API_COMPRESS={env_vars.get('COMPASS_API_COMPRESS', 'True')}\n")
+                f.write(f"COMPASS_API_SEARCH_MODE={env_vars.get('COMPASS_API_SEARCH_MODE', 'latest')}\n\n")
+
                 # 他の既存の環境変数も保持
+                excluded_keys = [
+                    'CHAT_API_PROVIDER', 'GEMINI_API_KEY', 'OPENAI_API_KEY',
+                    'ALICE_HISTORY_CHAR_LIMIT', 'COMPASS_API_URL', 'COMPASS_API_TARGET',
+                    'COMPASS_API_LIMIT', 'COMPASS_API_COMPRESS', 'COMPASS_API_SEARCH_MODE'
+                ]
                 for key, value in env_vars.items():
-                    if key not in ['CHAT_API_PROVIDER', 'GEMINI_API_KEY', 'OPENAI_API_KEY']:
+                    if key not in excluded_keys:
                         f.write(f"{key}={value}\n")
 
-            print(f".env file updated successfully")
+            print(f".env file updated successfully with all settings")
 
         except Exception as ex:
             print(f".env ファイルの更新中にエラーが発生しました: {ex}")

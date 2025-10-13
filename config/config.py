@@ -102,10 +102,15 @@ CHAT_LOGS_DIR = os.path.join(DATA_DIR, "chat_logs")
 
 # Compass API 設定
 # 過去の関連会話履歴を検索するためのAPIエンドポイント
-COMPASS_API_URL = "http://127.0.0.1:8000/search"
+COMPASS_API_URL = os.environ.get('COMPASS_API_URL', 'http://127.0.0.1:8000/search')
 
 # Compass API リクエスト設定
-COMPASS_API_CONFIG = {"target": "summary", "limit": 5, "compress": False, "search_mode": "latest"}
+COMPASS_API_CONFIG = {
+    "target": os.environ.get('COMPASS_API_TARGET', 'content'),
+    "limit": int(os.environ.get('COMPASS_API_LIMIT', '5')),
+    "compress": os.environ.get('COMPASS_API_COMPRESS', 'False').lower() in ('true', '1', 'yes'),
+    "search_mode": os.environ.get('COMPASS_API_SEARCH_MODE', 'latest')
+}
 
 # Alice Chat 設定
 ALICE_CHAT_CONFIG = {
@@ -113,5 +118,5 @@ ALICE_CHAT_CONFIG = {
     "openai_model": "gpt-5",  # OpenAIモデル
     "max_history_length": 500,  # 保持する会話履歴の最大件数
     "auto_save_interval": 30,  # 自動保存間隔（秒）
-    "history_char_limit": 4000,  # 過去のログから読み込む文字数制限
+    "history_char_limit": int(os.environ.get('ALICE_HISTORY_CHAR_LIMIT', '4000')),  # 過去のログから読み込む文字数制限
 }
