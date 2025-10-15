@@ -2,6 +2,7 @@
 import flet as ft
 import os
 import sys
+from pathlib import Path
 from tinydb import TinyDB
 
 # Add config directory to path
@@ -33,6 +34,18 @@ def main(page: ft.Page):
     with PerformanceTimer("Application initialization"):
         try:
             page.title = "Project A.N.C. (Alice Nexus Core)"
+
+            # Set window icon (must use absolute path and .ico format for Windows)
+            # Note: Flet has known issues with relative paths for page.window.icon
+            project_root = Path(__file__).parent.parent
+            icon_path = project_root / "assets" / "icon.ico"
+
+            if icon_path.exists():
+                page.window.icon = str(icon_path)
+                app_logger.log_ui_event("page_icon_set", "main_page", str(icon_path))
+            else:
+                app_logger.main_logger.warning(f"Icon file not found: {icon_path}")
+
             app_logger.log_ui_event("page_title_set", "main_page", page.title)
             
             # ディレクトリの安全な作成
@@ -191,10 +204,18 @@ def main(page: ft.Page):
 def safe_main():
     """アプリケーションのメイン関数を安全に実行するラッパー"""
     try:
-        ft.app(target=main)
+        # Get absolute path to assets directory
+        project_root = Path(__file__).parent.parent
+        assets_path = project_root / "assets"
+
+        # Run with assets_dir specified for flet run compatibility
+        ft.app(
+            target=main,
+            assets_dir=str(assets_path) if assets_path.exists() else None
+        )
     except Exception as e:
         print(f"Critical application error: {e}")
         print("Please check your configuration and try again.")
-        
+
 if __name__ == "__main__":
     safe_main()

@@ -22,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Endpoint type dropdown: "標準検索 (search)" or "グラフ検索 (graph_search)"
   - Related memories count field for graph search configuration
   - Helper text explaining when each option is applicable
+- **Application Window Icon**: Added custom window icon for better branding
+  - Created `assets/icon.ico` with multiple resolutions (256x256, 128x128, 64x64, 32x32, 16x16)
+  - Configured `page.window.icon` with absolute path for `flet run` compatibility
+  - Added `assets_dir` parameter to `ft.app()` for proper asset loading
 
 ### Changed
 - **alice_chat_manager.py**: Updated `_get_past_conversations_from_compass_api()` method
