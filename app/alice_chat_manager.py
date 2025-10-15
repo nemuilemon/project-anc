@@ -321,18 +321,26 @@ class AliceChatManager:
         """
         compass-apiを使用して過去の関連会話履歴を取得する。
         APIから返されるJSONデータを解析し、timestampとcontentのみを抽出して整形する。
+
+        サポートされるエンドポイント:
+        - /search: 標準的なベクトル類似度検索
+        - /graph_search: 関連する記憶も含むグラフ検索
         """
         # 設定を動的にリロード（最新の値を取得）
         import importlib
         importlib.reload(self.config)
 
-        compass_api_url = getattr(self.config, 'COMPASS_API_URL', None)
+        compass_api_base_url = getattr(self.config, 'COMPASS_API_BASE_URL', None)
         api_config = getattr(self.config, 'COMPASS_API_CONFIG', {})
 
-        if not compass_api_url:
+        if not compass_api_base_url:
             return None
 
         try:
+            # エンドポイントタイプを取得 (search または graph_search)
+            endpoint_type = api_config.get("endpoint", "search")
+            compass_api_url = f"{compass_api_base_url.rstrip('/')}/{endpoint_type}"
+
             # UIから設定された値を使ってpayloadを構築
             payload = {
                 "text": query_text,
@@ -343,7 +351,12 @@ class AliceChatManager:
                 }
             }
 
+            # graph_searchの場合はrelated_limitも追加
+            if endpoint_type == "graph_search":
+                payload["config"]["related_limit"] = api_config.get("related_limit", 3)
+
             # デバッグ: 送信するpayloadをログ出力
+            print(f"[Compass API] Endpoint: {compass_api_url}")
             print(f"[Compass API] Sending payload: {payload['config']}")
             print(f"[Compass API] Query text length: {len(query_text)} chars")
 
@@ -365,6 +378,7 @@ class AliceChatManager:
                 content = result.get('content', '内容なし')
                 formatted_results.append(f"時刻: {timestamp}\n内容: {content}")
 
+            print(f"[Compass API] Retrieved {len(results)} results")
             return "\n\n---\n\n".join(formatted_results)
 
         except requests.exceptions.RequestException as e:

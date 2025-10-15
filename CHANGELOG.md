@@ -5,6 +5,43 @@ All notable changes to Project A.N.C. (Alice Nexus Core) will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.2.0] - 2025-10-15
+
+### Added
+- **Compass API Graph Search Support**: Added support for `/graph_search` endpoint
+  - New endpoint type selection in Settings UI (standard search vs graph search)
+  - Graph search retrieves both similar memories and related memories
+  - Configurable `related_limit` parameter for graph search results
+  - Dynamic endpoint construction based on user selection
+- **Enhanced Compass API Configuration**:
+  - Split API URL into base URL and endpoint path for flexibility
+  - New `COMPASS_API_BASE_URL` environment variable (without endpoint path)
+  - New `COMPASS_API_ENDPOINT` environment variable (search/graph_search)
+  - New `COMPASS_API_RELATED_LIMIT` environment variable (graph search only)
+- **UI Improvements in Settings Tab**:
+  - Endpoint type dropdown: "標準検索 (search)" or "グラフ検索 (graph_search)"
+  - Related memories count field for graph search configuration
+  - Helper text explaining when each option is applicable
+
+### Changed
+- **alice_chat_manager.py**: Updated `_get_past_conversations_from_compass_api()` method
+  - Now constructs API URL dynamically: `{base_url}/{endpoint}`
+  - Adds `related_limit` parameter when endpoint is `graph_search`
+  - Enhanced logging to show which endpoint is being used
+- **config.py**: Updated Compass API configuration structure
+  - `COMPASS_API_URL` replaced with `COMPASS_API_BASE_URL`
+  - Added `COMPASS_API_ENDPOINT` with "search" as default
+  - Added `related_limit` to `COMPASS_API_CONFIG` dictionary
+- **.env.example**: Updated with new environment variables and clearer documentation
+  - Restructured Compass API section with detailed comments
+  - Added examples for both search modes
+
+### Technical Details
+- Backward compatible: Default values maintain existing behavior (standard search)
+- All settings are hot-swappable through the UI without app restart
+- Thread-safe configuration reloading using `importlib.reload()`
+- Comprehensive validation for new numeric fields
+
 ## [3.1.1] - 2025-10-13
 
 ### Added

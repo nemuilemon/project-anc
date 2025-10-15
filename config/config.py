@@ -101,15 +101,20 @@ CREATE_NIPPO_PROMPT_PATH = os.path.join(PROMPTS_DIR, "create_nippo_prompt.md")
 CHAT_LOGS_DIR = os.path.join(DATA_DIR, "chat_logs")
 
 # Compass API 設定
-# 過去の関連会話履歴を検索するためのAPIエンドポイント
-COMPASS_API_URL = os.environ.get('COMPASS_API_URL', 'http://127.0.0.1:8000/search')
+# 過去の関連会話履歴を検索するためのAPIベースURL（エンドポイントパスを含まない）
+COMPASS_API_BASE_URL = os.environ.get('COMPASS_API_BASE_URL', 'http://127.0.0.1:8000')
+
+# Compass API エンドポイントタイプ: "search" または "graph_search"
+COMPASS_API_ENDPOINT = os.environ.get('COMPASS_API_ENDPOINT', 'search')
 
 # Compass API リクエスト設定
 COMPASS_API_CONFIG = {
     "target": os.environ.get('COMPASS_API_TARGET', 'content'),
     "limit": int(os.environ.get('COMPASS_API_LIMIT', '5')),
+    "related_limit": int(os.environ.get('COMPASS_API_RELATED_LIMIT', '3')),  # graph_search用
     "compress": os.environ.get('COMPASS_API_COMPRESS', 'False').lower() in ('true', '1', 'yes'),
-    "search_mode": os.environ.get('COMPASS_API_SEARCH_MODE', 'latest')
+    "search_mode": os.environ.get('COMPASS_API_SEARCH_MODE', 'latest'),
+    "endpoint": os.environ.get('COMPASS_API_ENDPOINT', 'search')
 }
 
 # Alice Chat 設定

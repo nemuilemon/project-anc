@@ -415,11 +415,13 @@ OPENAI_API_KEY=your_key_here
 ALICE_HISTORY_CHAR_LIMIT=4000   # Conversation history character limit
 
 # Compass API Configuration (v3.1.1+)
-COMPASS_API_URL=http://127.0.0.1:8000/search
-COMPASS_API_TARGET=content      # Target field for search
-COMPASS_API_LIMIT=5             # Number of results to fetch
-COMPASS_API_COMPRESS=False      # Enable/disable compression
-COMPASS_API_SEARCH_MODE=latest  # Search mode (latest/relevant)
+COMPASS_API_BASE_URL=http://127.0.0.1:8000    # Base URL (without endpoint path)
+COMPASS_API_ENDPOINT=search                    # Endpoint type (search/graph_search)
+COMPASS_API_TARGET=content                     # Target field for search
+COMPASS_API_LIMIT=5                            # Number of initial results to fetch
+COMPASS_API_RELATED_LIMIT=3                    # Number of related items (graph_search only)
+COMPASS_API_COMPRESS=False                     # Enable/disable compression
+COMPASS_API_SEARCH_MODE=latest                 # Search mode (latest/history)
 
 # Models
 OLLAMA_MODEL=gemma3:4b
@@ -446,6 +448,18 @@ MAX_MEMORY_CHARS = 2000
 # Models
 OLLAMA_MODEL = "gemma3:4b"
 GEMINI_MODEL = "gemini-2.5-pro"
+
+# Compass API Configuration
+COMPASS_API_BASE_URL = "http://127.0.0.1:8000"
+COMPASS_API_ENDPOINT = "search"  # or "graph_search"
+COMPASS_API_CONFIG = {
+    "target": "content",           # "summary" or "content"
+    "limit": 5,                    # Number of initial results
+    "related_limit": 3,            # Number of related items (graph_search only)
+    "compress": False,             # Enable/disable AI compression
+    "search_mode": "latest",       # "latest" or "history"
+    "endpoint": "search"           # "search" or "graph_search"
+}
 ```
 
 ## External Dependencies

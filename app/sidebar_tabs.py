@@ -1411,14 +1411,23 @@ class SettingsTab(ft.Container):
             helper_text="OpenAI APIのキー"
         )
 
-        # Compass API URL設定
-        self.compass_api_url_field = ft.TextField(
-            label="Compass API URL",
-            value=getattr(config, 'COMPASS_API_URL', 'http://127.0.0.1:8000/search'),
-            helper_text="過去の会話履歴検索APIのURL"
+        # Compass API ベースURL設定
+        self.compass_api_base_url_field = ft.TextField(
+            label="Compass API ベースURL",
+            value=getattr(config, 'COMPASS_API_BASE_URL', 'http://127.0.0.1:8000'),
+            helper_text="過去の会話履歴検索APIのベースURL（エンドポイントパスを含まない）"
         )
 
         # Compass API 詳細設定
+        self.compass_endpoint_dropdown = ft.Dropdown(
+            label="エンドポイント (endpoint)",
+            options=[
+                ft.dropdown.Option(key="search", text="標準検索 (search)"),
+                ft.dropdown.Option(key="graph_search", text="グラフ検索 (graph_search)"),
+            ],
+            value=getattr(self, '_initial_compass_endpoint', 'search'),
+            helper_text="標準検索または関連記憶も含むグラフ検索"
+        )
         self.compass_target_dropdown = ft.Dropdown(
             label="検索対象 (target)",
             options=[
@@ -1433,11 +1442,21 @@ class SettingsTab(ft.Container):
             value=str(getattr(self, '_initial_compass_limit', 5)),
             keyboard_type=ft.KeyboardType.NUMBER,
             dense=True,
-            width=200
+            width=200,
+            helper_text="初期検索結果の数"
+        )
+        self.compass_related_limit_field = ft.TextField(
+            label="関連記憶の取得件数 (related_limit)",
+            hint_text="0以上の整数を入力",
+            value=str(getattr(self, '_initial_compass_related_limit', 3)),
+            keyboard_type=ft.KeyboardType.NUMBER,
+            dense=True,
+            width=200,
+            helper_text="graph_search使用時のみ有効"
         )
         self.compass_compress_switch = ft.Switch(
             label="結果を要約する (compress)",
-            value=getattr(self, '_initial_compass_compress', True)
+            value=getattr(self, '_initial_compass_compress', False)
         )
         self.compass_search_mode_dropdown = ft.Dropdown(
             label="検索モード (search_mode)",
@@ -1518,9 +1537,11 @@ class SettingsTab(ft.Container):
             "Compass API 設定",
             ft.Icons.COMPASS_CALIBRATION,
             [
-                self.compass_api_url_field,
+                self.compass_api_base_url_field,
+                self.compass_endpoint_dropdown,
                 self.compass_target_dropdown,
                 self.compass_limit_field,
+                self.compass_related_limit_field,
                 self.compass_compress_switch,
                 self.compass_search_mode_dropdown
             ]
@@ -1631,9 +1652,11 @@ class SettingsTab(ft.Container):
             self.compass_api_section = self._create_expandable_section(
                 "compass_api", "Compass API 設定", ft.Icons.COMPASS_CALIBRATION,
                 [
-                    self.compass_api_url_field,
+                    self.compass_api_base_url_field,
+                    self.compass_endpoint_dropdown,
                     self.compass_target_dropdown,
                     self.compass_limit_field,
+                    self.compass_related_limit_field,
                     self.compass_compress_switch,
                     self.compass_search_mode_dropdown
                 ]
@@ -1651,25 +1674,29 @@ class SettingsTab(ft.Container):
             current_char_limit = config.ALICE_CHAT_CONFIG.get('history_char_limit', 4000)
             self._initial_char_limit = current_char_limit
 
-            # Compass API URLの現在値を取得
-            current_compass_api_url = getattr(config, 'COMPASS_API_URL', 'http://127.0.0.1:8000/search')
-            if not hasattr(self, 'compass_api_url_field'):
-                self.compass_api_url_field = ft.TextField() # 初期化
-            self.compass_api_url_field.value = current_compass_api_url
+            # Compass API Base URLの現在値を取得
+            current_compass_api_base_url = getattr(config, 'COMPASS_API_BASE_URL', 'http://127.0.0.1:8000')
+            if not hasattr(self, 'compass_api_base_url_field'):
+                self.compass_api_base_url_field = ft.TextField() # 初期化
+            self.compass_api_base_url_field.value = current_compass_api_base_url
 
             # Compass API Config の現在値を取得
             api_config = getattr(config, 'COMPASS_API_CONFIG', {})
+            self._initial_compass_endpoint = api_config.get('endpoint', 'search')
             self._initial_compass_target = api_config.get('target', 'content')
-            self._initial_compass_limit = api_config.get('limit', 3)
-            self._initial_compass_compress = api_config.get('compress', True)
+            self._initial_compass_limit = api_config.get('limit', 5)
+            self._initial_compass_related_limit = api_config.get('related_limit', 3)
+            self._initial_compass_compress = api_config.get('compress', False)
             self._initial_compass_search_mode = api_config.get('search_mode', 'latest')
 
         except Exception as ex:
             print(f"設定の読み込み中にエラーが発生しました: {ex}")
             self._initial_char_limit = 4000
+            self._initial_compass_endpoint = 'search'
             self._initial_compass_target = 'content'
-            self._initial_compass_limit = 3
-            self._initial_compass_compress = True
+            self._initial_compass_limit = 5
+            self._initial_compass_related_limit = 3
+            self._initial_compass_compress = False
             self._initial_compass_search_mode = 'latest'
 
     def _save_settings(self, e=None):
@@ -1688,17 +1715,22 @@ class SettingsTab(ft.Container):
                 raise ValueError(f"会話履歴文字数は0以上の整数で入力してください: {str(ve)}")
 
             # Compass API の値を取得（検証付き）
-            compass_api_url = self.compass_api_url_field.value
+            compass_api_base_url = self.compass_api_base_url_field.value
             try:
                 compass_limit = int(self.compass_limit_field.value)
                 if compass_limit < 0:
+                    raise ValueError("負の値は許可されていません")
+                compass_related_limit = int(self.compass_related_limit_field.value)
+                if compass_related_limit < 0:
                     raise ValueError("負の値は許可されていません")
             except ValueError as ve:
                 raise ValueError(f"取得件数は0以上の整数で入力してください: {str(ve)}")
 
             compass_config = {
+                "endpoint": self.compass_endpoint_dropdown.value,
                 "target": self.compass_target_dropdown.value,
                 "limit": compass_limit,
+                "related_limit": compass_related_limit,
                 "compress": self.compass_compress_switch.value,
                 "search_mode": self.compass_search_mode_dropdown.value
             }
@@ -1707,7 +1739,7 @@ class SettingsTab(ft.Container):
             api_provider = self.api_provider_dropdown.value
 
             # .env ファイルに全ての設定を保存
-            self._update_env_file(api_provider, char_limit, compass_api_url, compass_config)
+            self._update_env_file(api_provider, char_limit, compass_api_base_url, compass_config)
 
             # 設定変更コールバックを呼び出す（AliceChatManagerの再初期化）
             reload_success = False
@@ -1783,7 +1815,7 @@ class SettingsTab(ft.Container):
             print(f"設定ファイルの更新中にエラーが発生しました: {ex}")
             raise
 
-    def _update_env_file(self, api_provider, char_limit, compass_api_url, compass_config):
+    def _update_env_file(self, api_provider, char_limit, compass_api_base_url, compass_config):
         """.env ファイルを更新してAPIキーと全ての設定を保存"""
         try:
             # .env ファイルのパス
@@ -1813,10 +1845,12 @@ class SettingsTab(ft.Container):
             env_vars['ALICE_HISTORY_CHAR_LIMIT'] = str(char_limit)
 
             # Compass API設定を更新
-            env_vars['COMPASS_API_URL'] = compass_api_url
+            env_vars['COMPASS_API_BASE_URL'] = compass_api_base_url
+            env_vars['COMPASS_API_ENDPOINT'] = compass_config.get('endpoint', 'search')
             env_vars['COMPASS_API_TARGET'] = compass_config.get('target', 'content')
             env_vars['COMPASS_API_LIMIT'] = str(compass_config.get('limit', 5))
-            env_vars['COMPASS_API_COMPRESS'] = str(compass_config.get('compress', True))
+            env_vars['COMPASS_API_RELATED_LIMIT'] = str(compass_config.get('related_limit', 3))
+            env_vars['COMPASS_API_COMPRESS'] = str(compass_config.get('compress', False))
             env_vars['COMPASS_API_SEARCH_MODE'] = compass_config.get('search_mode', 'latest')
 
             # .env ファイルに書き込み
@@ -1837,17 +1871,20 @@ class SettingsTab(ft.Container):
                 f.write(f"ALICE_HISTORY_CHAR_LIMIT={env_vars.get('ALICE_HISTORY_CHAR_LIMIT', '4000')}\n\n")
 
                 f.write("# Compass API Configuration\n")
-                f.write(f"COMPASS_API_URL={env_vars.get('COMPASS_API_URL', 'http://127.0.0.1:8000/search')}\n")
+                f.write(f"COMPASS_API_BASE_URL={env_vars.get('COMPASS_API_BASE_URL', 'http://127.0.0.1:8000')}\n")
+                f.write(f"COMPASS_API_ENDPOINT={env_vars.get('COMPASS_API_ENDPOINT', 'search')}\n")
                 f.write(f"COMPASS_API_TARGET={env_vars.get('COMPASS_API_TARGET', 'content')}\n")
                 f.write(f"COMPASS_API_LIMIT={env_vars.get('COMPASS_API_LIMIT', '5')}\n")
-                f.write(f"COMPASS_API_COMPRESS={env_vars.get('COMPASS_API_COMPRESS', 'True')}\n")
+                f.write(f"COMPASS_API_RELATED_LIMIT={env_vars.get('COMPASS_API_RELATED_LIMIT', '3')}\n")
+                f.write(f"COMPASS_API_COMPRESS={env_vars.get('COMPASS_API_COMPRESS', 'False')}\n")
                 f.write(f"COMPASS_API_SEARCH_MODE={env_vars.get('COMPASS_API_SEARCH_MODE', 'latest')}\n\n")
 
                 # 他の既存の環境変数も保持
                 excluded_keys = [
                     'CHAT_API_PROVIDER', 'GEMINI_API_KEY', 'OPENAI_API_KEY',
-                    'ALICE_HISTORY_CHAR_LIMIT', 'COMPASS_API_URL', 'COMPASS_API_TARGET',
-                    'COMPASS_API_LIMIT', 'COMPASS_API_COMPRESS', 'COMPASS_API_SEARCH_MODE'
+                    'ALICE_HISTORY_CHAR_LIMIT', 'COMPASS_API_BASE_URL', 'COMPASS_API_ENDPOINT',
+                    'COMPASS_API_TARGET', 'COMPASS_API_LIMIT', 'COMPASS_API_RELATED_LIMIT',
+                    'COMPASS_API_COMPRESS', 'COMPASS_API_SEARCH_MODE'
                 ]
                 for key, value in env_vars.items():
                     if key not in excluded_keys:
