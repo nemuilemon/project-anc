@@ -135,7 +135,7 @@ class AliceChatManager:
                 "timestamp": datetime.now().isoformat(),
                 "request": {
                     "contents": request_contents,
-                    "model": getattr(self.config, 'ALICE_CHAT_CONFIG', {}).get('model', 'gemini-2.0-flash-exp')
+                    "model": getattr(self.config, 'ALICE_CHAT_CONFIG', {}).get('model', 'gemini-2.5-pro')
                 },
                 "response": response_text if not error else None,
                 "error": error

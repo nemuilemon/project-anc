@@ -122,7 +122,7 @@ class MemoryCreationManager:
             print(f"Memory creation prompt prepared: {len(final_prompt)} characters")
 
             # Get model name from config
-            model_name = getattr(self.config, 'ALICE_CHAT_CONFIG', {}).get('model', 'gemini-2.0-flash-exp')
+            model_name = getattr(self.config, 'ALICE_CHAT_CONFIG', {}).get('model', 'gemini-2.5-pro')
 
             # Make API request
             response = self.client.models.generate_content(
