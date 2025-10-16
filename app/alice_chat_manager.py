@@ -480,7 +480,6 @@ class AliceChatManager:
         2. 過去の関連会話履歴（compass-apiから取得）
         3. 今日の会話履歴（末尾から指定文字数）
         4. 現在のセッションの会話履歴
-        5. 最新のユーザーメッセージ
 
         Returns:
             List[Any]: List of message contents (strings and potentially images)
@@ -526,10 +525,6 @@ class AliceChatManager:
                 role_name = "ご主人様" if entry['role'] == 'user' else "ありす"
                 chatbox_content += f"\n**{role_name}:**\n{entry['content']}\n"
             contents.append(chatbox_content)
-
-        # 7. 最新のユーザーメッセージを明示的に追加
-        if history and history[-1]['role'] == 'user':
-            contents.append(f"{history[-1]['content']}")
 
         return contents if contents else ["こんにちは"]
 
