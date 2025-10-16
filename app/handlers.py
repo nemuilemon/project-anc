@@ -695,24 +695,26 @@ class AppHandlers:
 
     # ========== CHAT HANDLERS ==========
 
-    def handle_send_chat_message(self, user_message: str, alice_response: str):
+    def handle_send_chat_message(self, user_message: str, alice_response: str, image_path: str = None):
         """チャットメッセージ送受信のハンドラ"""
         try:
             from logger import log_chat
 
             # ログにチャットメッセージを記録
             log_chat(f"User: {user_message[:100]}{'...' if len(user_message) > 100 else ''}")
+            if image_path:
+                log_chat(f"  Image: {image_path}")
             log_chat(f"Alice: {alice_response[:100]}{'...' if len(alice_response) > 100 else ''}")
 
             # チャットログファイルに保存
-            self._save_chat_log(user_message, alice_response)
+            self._save_chat_log(user_message, alice_response, image_path)
 
         except Exception as e:
             from logger import log_error
             log_error(e, "handle_send_chat_message")
             print(f"Error in handle_send_chat_message: {e}")
 
-    def _save_chat_log(self, user_message: str, alice_response: str):
+    def _save_chat_log(self, user_message: str, alice_response: str, image_path: str = None):
         """チャットログをファイルに保存する"""
         try:
             import os
@@ -730,11 +732,12 @@ class AppHandlers:
 
             # ログエントリを作成
             timestamp = datetime.now().strftime("%H:%M:%S")
+            image_log = f"\n画像: {image_path}" if image_path else ""
             log_entry = f"""
 ## {timestamp}
 
 **ご主人様:**
-{user_message}
+{user_message}{image_log}
 
 **ありす:**
 {alice_response}

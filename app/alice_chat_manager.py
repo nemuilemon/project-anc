@@ -13,6 +13,7 @@ from google import genai
 from google.genai import types
 from state_manager import app_state
 import requests
+import PIL.Image
 
 # OpenAI import (optional, will be None if not installed)
 try:
@@ -135,7 +136,7 @@ class AliceChatManager:
                 "timestamp": datetime.now().isoformat(),
                 "request": {
                     "contents": request_contents,
-                    "model": getattr(self.config, 'ALICE_CHAT_CONFIG', {}).get('model', 'gemini-2.5-pro')
+                    "model": getattr(self.config, 'ALICE_CHAT_CONFIG', {}).get('model', 'gemini-2.5-flash')
                 },
                 "response": response_text if not error else None,
                 "error": error
@@ -182,11 +183,12 @@ class AliceChatManager:
         except Exception as e:
             print(f"Failed to save conversation to chat log: {e}")
 
-    def send_message(self, user_message: str) -> str:
+    def send_message(self, user_message: str, image_path: Optional[str] = None) -> str:
         """Send a message to Alice and get the response.
 
         Args:
             user_message (str): The user's message
+            image_path (Optional[str]): Path to the image to be sent
 
         Returns:
             str: Alice's response message
@@ -194,18 +196,22 @@ class AliceChatManager:
         if not self.client:
             return f"エラー: {self.api_provider.upper()} APIクライアントが初期化されていません。"
 
-        if not user_message or not user_message.strip():
-            return "メッセージを入力してください。"
+        if not user_message.strip() and not image_path:
+            return "メッセージまたは画像を送信してください。"
 
         try:
             # Add user message to AppState
-            app_state.add_conversation_message('user', user_message.strip())
+            app_state.add_conversation_message(
+                'user',
+                user_message.strip(),
+                metadata={'image_path': image_path} if image_path else None
+            )
 
             # Route to appropriate API handler
             if self.api_provider == 'google':
-                response_text = self._send_message_gemini()
+                response_text = self._send_message_gemini(image_path)
             elif self.api_provider == 'openai':
-                response_text = self._send_message_openai()
+                response_text = self._send_message_openai(image_path)
             else:
                 raise ValueError(f"Unknown API provider: {self.api_provider}")
 
@@ -222,43 +228,75 @@ class AliceChatManager:
             print(f"Error in send_message: {e}")
             return error_message
 
-    def _send_message_gemini(self) -> str:
+    def _send_message_gemini(self, image_path: Optional[str] = None) -> str:
         """Send message using Google Gemini API.
+
+        Args:
+            image_path (Optional[str]): Path to the image to be sent
 
         Returns:
             str: Alice's response message
         """
         # Prepare conversation contents for API
-        contents = self._prepare_contents()
+        prompt_parts = self._prepare_contents()
+        contents = []
+        for part in prompt_parts:
+            if isinstance(part, str):
+                contents.append(part)
 
-        # Debug: Log contents structure (for development)
-        print(f"API Contents: {len(contents)} blocks prepared")
-        for i, content in enumerate(contents):
-            content_preview = content[:100].replace('\n', '\\n') + "..." if len(content) > 100 else content.replace('\n', '\\n')
-            print(f"  Block {i+1}: {content_preview}")
+        # Add image if provided
+        if image_path:
+            try:
+                import mimetypes
+                mime_type, _ = mimetypes.guess_type(image_path)
+                if mime_type is None:
+                    mime_type = 'image/jpeg' # Default mime type
+                with open(image_path, 'rb') as f:
+                    image_bytes = f.read()
+                contents.insert(0, types.Part.from_bytes(
+                    data=image_bytes,
+                    mime_type=mime_type,
+                ))
+            except Exception as e:
+                return f"画像ファイルの読み込みに失敗しました: {e}"
 
         # Get model name from config
-        model_name = getattr(self.config, 'ALICE_CHAT_CONFIG', {}).get('gemini_model', 'gemini-2.5-pro')
+        model_name = getattr(self.config, 'ALICE_CHAT_CONFIG', {}).get('gemini_model', 'gemini-2.5-flash')
+
+        # Debug: Log contents being sent to the API
+        print("\n" + "="*80)
+        print(f"--- Calling Gemini API ({model_name}) ---")
+        print(f"\n--- [System Instruction] ---\n{self.system_instruction}")
+        print(f"\n--- Total parts: {len(contents)} ---")
+        for i, part in enumerate(contents):
+            if isinstance(part, str):
+                print(f"\n--- [Content Part {i+1}: Text] ---\n{part}")
+            else:  # It's an image part
+                print(f"\n--- [Content Part {i+1}: Image] ---\nPath: {image_path}")
+        print("\n" + "="*80 + "\n")
 
         # Make API request
         response = self.client.models.generate_content(
             model=model_name,
+            contents=contents,
             config=types.GenerateContentConfig(
                 system_instruction=self.system_instruction
-            ),
-            contents=contents
+            )
         )
 
         # Extract response text
         response_text = response.text if hasattr(response, 'text') else str(response)
 
         # Log the dialog (for debugging/API tracking)
-        self._log_dialog(contents, response_text)
+        self._log_dialog([str(p) for p in contents], response_text)
 
         return response_text
 
-    def _send_message_openai(self) -> str:
+    def _send_message_openai(self, image_path: Optional[str] = None) -> str:
         """Send message using OpenAI API.
+
+        Args:
+            image_path (Optional[str]): Path to the image to be sent
 
         Returns:
             str: Alice's response message
@@ -289,19 +327,65 @@ class AliceChatManager:
 
         # Add conversation history from AppState
         for msg in history:
+            message_content = [{"type": "text", "text": msg['content']}]
+            if msg.get('metadata') and msg['metadata'].get('image_path'):
+                image_path = msg['metadata']['image_path']
+                try:
+                    import base64
+                    with open(image_path, "rb") as image_file:
+                        base64_image = base64.b64encode(image_file.read()).decode('utf-8')
+                    message_content.append({
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/jpeg;base64,{base64_image}"
+                        }
+                    })
+                except Exception as e:
+                    print(f"Failed to encode image: {e}")
+
             messages.append({
                 "role": "user" if msg['role'] == 'user' else "assistant",
-                "content": msg['content']
+                "content": message_content
             })
 
-        # Debug: Log messages structure
-        print(f"OpenAI Messages: {len(messages)} messages prepared")
-        for i, msg in enumerate(messages):
-            content_preview = msg['content'][:100].replace('\n', '\\n') + "..." if len(msg['content']) > 100 else msg['content'].replace('\n', '\\n')
-            print(f"  Message {i+1} ({msg['role']}): {content_preview}")
-
         # Get model name from config
-        model_name = getattr(self.config, 'ALICE_CHAT_CONFIG', {}).get('openai_model', 'gpt-5')
+        model_name = getattr(self.config, 'ALICE_CHAT_CONFIG', {}).get('openai_model', 'gpt-4-turbo')
+
+        # Debug: Log messages being sent to the API
+        print("\n" + "="*80)
+        print(f"--- Calling OpenAI API ({model_name}) ---")
+        print(f"\n--- [System Instruction] ---\n{self.system_instruction}")
+        print(f"\n--- Total messages: {len(messages)} ---")
+        
+        # Create a serializable version of messages for logging, replacing image data
+        import json
+        messages_for_log = []
+        has_image = False
+        for msg in messages:
+            log_msg = msg.copy()
+            if isinstance(log_msg.get('content'), list):
+                new_content_list = []
+                for content_part in log_msg['content']:
+                    if content_part.get('type') == 'image_url':
+                        has_image = True
+                        # Replace base64 data with a placeholder. The original path is not
+                        # available in the final payload structure.
+                        new_content_list.append({
+                            "type": "image_url",
+                            "image_path_note": "Path not available in final payload, see history item for path",
+                            "image_url": {"url": "data:image/...;base64,[...truncated...]"}
+                        })
+                    else:
+                        new_content_list.append(content_part)
+                log_msg['content'] = new_content_list
+            messages_for_log.append(log_msg)
+
+        print(json.dumps(messages_for_log, indent=2, ensure_ascii=False))
+        if has_image:
+            print("\nNOTE: For OpenAI, image paths are not available in the final payload.")
+            print("The 'image_path_note' is a reminder that the path is associated with the message in the conversation history state.")
+
+        print("\n" + "="*80 + "\n")
 
         # Make API request
         response = self.client.chat.completions.create(
@@ -388,7 +472,7 @@ class AliceChatManager:
             print("Error: Failed to decode JSON from compass-api response.")
             return None
         
-    def _prepare_contents(self) -> List[str]:
+    def _prepare_contents(self) -> List[Any]:
         """Prepare conversation contents for the API request.
 
         APIに渡す情報は以下の5つの要素で構成されます:
@@ -399,7 +483,7 @@ class AliceChatManager:
         5. 最新のユーザーメッセージ
 
         Returns:
-            List[str]: List of message contents
+            List[Any]: List of message contents (strings and potentially images)
         """
         contents = []
 
@@ -445,7 +529,7 @@ class AliceChatManager:
 
         # 7. 最新のユーザーメッセージを明示的に追加
         if history and history[-1]['role'] == 'user':
-            contents.append(f"最新メッセージ: {history[-1]['content']}")
+            contents.append(f"{history[-1]['content']}")
 
         return contents if contents else ["こんにちは"]
 
@@ -481,6 +565,10 @@ class AliceChatManager:
 
             # 内容が空の場合はNoneを返す
             if not content:
+                return None
+            
+            # 文字数制限0の場合return None
+            if char_limit == 0:
                 return None
 
             # 文字数制限が指定されている場合は末尾から指定された文字数を取得

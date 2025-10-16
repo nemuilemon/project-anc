@@ -21,10 +21,17 @@ class AppLogic:
         self.allowed_dirs = [config.NOTES_DIR, config.ARCHIVE_DIR, config.MEMORIES_DIR]
         
         # Initialize AI analysis system with dynamic plugin loading
+        print("[DIAGNOSTIC] AppLogic: Initializing AIAnalysisManager...")
         self.ai_manager = AIAnalysisManager()
-        self._setup_ai_plugins()
+        print("[DIAGNOSTIC] AppLogic: AIAnalysisManager initialized.")
 
+        print("[DIAGNOSTIC] AppLogic: Setting up AI plugins...")
+        self._setup_ai_plugins()
+        print("[DIAGNOSTIC] AppLogic: AI plugins set up.")
+
+        print("[DIAGNOSTIC] AppLogic: Syncing database...")
         self.sync_database()
+        print("[DIAGNOSTIC] AppLogic: Database synced.")
 
     def _setup_ai_plugins(self):
         """Initialize and register AI analysis plugins dynamically."""

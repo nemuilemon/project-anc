@@ -30,26 +30,26 @@ except Exception as e:
     print(f"[Config] Error loading .env file: {e}")
 
 # データファイルを保存するメインディレクトリ
-DATA_DIR = os.path.join(PROJECT_ROOT, "data")
+DATA_DIR = os.path.join(PROJECT_ROOT, os.getenv('DATA_DIR_NAME', 'data'))
 
 # メモを保存するメインディレクトリ
-NOTES_DIR = os.path.join(DATA_DIR, "notes")
+NOTES_DIR = os.path.join(DATA_DIR, os.getenv('NOTES_DIR_NAME', 'notes'))
 
 # アーカイブファイルを保存するディレクトリ
 # アーカイブされたファイルはここに移動される
-ARCHIVE_DIR = os.path.join(NOTES_DIR, ".archive")
+ARCHIVE_DIR = os.path.join(NOTES_DIR, os.getenv('ARCHIVE_DIR_NAME', '.archive'))
 
 # TinyDBデータベースファイル名とパス
 # ファイルのメタデータ（タグ、ステータス、順序等）を格納
-DB_FILE = os.path.join(DATA_DIR, "anc_db.json")
+DB_FILE = os.path.join(DATA_DIR, os.getenv('DB_FILE_NAME', 'anc_db.json'))
 
 # Ollama AIモデル名
 # タグ自動生成で使用するローカルLLMモデル
-OLLAMA_MODEL = "gemma3:4b"
+OLLAMA_MODEL = os.getenv('OLLAMA_MODEL', 'gemma3:4b')
 
 # Sentiment Compass専用モデル設定
 # Growth Analysis（感情コンパス）で使用するモデル
-SENTIMENT_COMPASS_MODEL = "gemma3:4b"
+SENTIMENT_COMPASS_MODEL = os.getenv('SENTIMENT_COMPASS_MODEL', 'gemma3:4b')
 
 # 利用可能なモデル候補（コメント）
 # gemma3:27b  - 高精度だがメモリ使用量大
@@ -77,28 +77,28 @@ GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
 OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY', '')
 
 # Aliceシステムプロンプトファイルのパス
-ALICE_SYSTEM_PROMPT_PATH = os.path.join(NOTES_DIR, "0-System-Prompt.md")
+ALICE_SYSTEM_PROMPT_PATH = os.path.join(DATA_DIR, os.getenv('ALICE_SYSTEM_PROMPT_FILE', '0-System-Prompt.md'))
 
 # Alice 長期記憶ファイルのパス
-ALICE_MEMORY_FILE_PATH = os.path.join(NOTES_DIR, "0-Memory.md")
+ALICE_MEMORY_FILE_PATH = os.path.join(DATA_DIR, os.getenv('ALICE_MEMORY_FILE', '0-Memory.md'))
 
 # 記憶ファイルを保存するディレクトリ
-MEMORIES_DIR = os.path.join(DATA_DIR, "memories")
+MEMORIES_DIR = os.path.join(DATA_DIR, os.getenv('MEMORIES_DIR_NAME', 'memories'))
 
 # 日報ファイルを保存するディレクトリ
-NIPPO_DIR = os.path.join(DATA_DIR, "nippo")
+NIPPO_DIR = os.path.join(DATA_DIR, os.getenv('NIPPO_DIR_NAME', 'nippo'))
 
 # プロンプトファイルを保存するディレクトリ
-PROMPTS_DIR = os.path.join(PROJECT_ROOT, "prompts")
+PROMPTS_DIR = os.path.join(DATA_DIR, os.getenv('PROMPTS_DIR_NAME', 'prompts'))
 
 # 記憶生成用プロンプトファイルのパス
-CREATE_MEMORY_PROMPT_PATH = os.path.join(PROMPTS_DIR, "create_memory_prompt.md")
+CREATE_MEMORY_PROMPT_PATH = os.path.join(PROMPTS_DIR, os.getenv('CREATE_MEMORY_PROMPT_FILE', 'create_memory_prompt.md'))
 
 # 日報生成用プロンプトファイルのパス
-CREATE_NIPPO_PROMPT_PATH = os.path.join(PROMPTS_DIR, "create_nippo_prompt.md")
+CREATE_NIPPO_PROMPT_PATH = os.path.join(PROMPTS_DIR, os.getenv('CREATE_NIPPO_PROMPT_FILE', 'create_nippo_prompt.md'))
 
 # Alice Chat ログディレクトリ
-CHAT_LOGS_DIR = os.path.join(DATA_DIR, "chat_logs")
+CHAT_LOGS_DIR = os.path.join(DATA_DIR, os.getenv('CHAT_LOGS_DIR_NAME', 'chat_logs'))
 
 # Compass API 設定
 # 過去の関連会話履歴を検索するためのAPIベースURL（エンドポイントパスを含まない）
@@ -110,8 +110,8 @@ COMPASS_API_ENDPOINT = os.environ.get('COMPASS_API_ENDPOINT', 'search')
 # Compass API リクエスト設定
 COMPASS_API_CONFIG = {
     "target": os.environ.get('COMPASS_API_TARGET', 'content'),
-    "limit": int(os.environ.get('COMPASS_API_LIMIT', '5')),
-    "related_limit": int(os.environ.get('COMPASS_API_RELATED_LIMIT', '3')),  # graph_search用
+    "limit": int(os.environ.get('COMPASS_API_LIMIT', '0')),
+    "related_limit": int(os.environ.get('COMPASS_API_RELATED_LIMIT', '0')),  # graph_search用
     "compress": os.environ.get('COMPASS_API_COMPRESS', 'False').lower() in ('true', '1', 'yes'),
     "search_mode": os.environ.get('COMPASS_API_SEARCH_MODE', 'latest'),
     "endpoint": os.environ.get('COMPASS_API_ENDPOINT', 'search')
@@ -119,9 +119,9 @@ COMPASS_API_CONFIG = {
 
 # Alice Chat 設定
 ALICE_CHAT_CONFIG = {
-    "gemini_model": "gemini-2.5-pro",  # Google Geminiモデル
-    "openai_model": "gpt-5",  # OpenAIモデル
-    "max_history_length": 500,  # 保持する会話履歴の最大件数
-    "auto_save_interval": 30,  # 自動保存間隔（秒）
+    "gemini_model": os.getenv('GEMINI_MODEL', 'gemini-2.5-flash'),  # Google Geminiモデル
+    "openai_model": os.getenv('OPENAI_MODEL_NAME', 'gpt-5'),  # OpenAIモデル
+    "max_history_length": int(os.getenv('MAX_HISTORY_LENGTH', '500')),  # 保持する会話履歴の最大件数
+    "auto_save_interval": int(os.getenv('AUTO_SAVE_INTERVAL', '30')),  # 自動保存間隔（秒）
     "history_char_limit": int(os.environ.get('ALICE_HISTORY_CHAR_LIMIT', '4000')),  # 過去のログから読み込む文字数制限
 }

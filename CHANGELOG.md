@@ -5,6 +5,48 @@ All notable changes to Project A.N.C. (Alice Nexus Core) will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.3.0] - 2025-10-16
+
+### Added
+- **Image Upload and Recognition**: Implemented image upload functionality in the chat interface, allowing users to send images to the AI assistant.
+  - Added a file picker to the message input area for selecting images.
+  - Added a preview area for the selected image before sending.
+  - The AI assistant (Alice) can now recognize and respond to images sent by the user.
+- **`GEMINI.md`**: Created a `GEMINI.md` file based on `CLAUDE.md` to provide guidance for AI assistants working on the project.
+
+### Changed
+- **`app/ui_redesign.py`**:
+  - Enabled the "attach file" button to open a file picker for images.
+  - Added an image preview container to the UI.
+  - Modified the `_send_message` method to handle both text and image messages.
+  - Updated the `_add_message` method to display images in the chat view.
+- **`app/alice_chat_manager.py`**:
+  - Updated `send_message` to accept an `image_path`.
+  - Modified `_send_message_gemini` to send image data to the Gemini API.
+  - Modified `_send_message_openai` to send image data to the OpenAI API.
+- **`app/handlers.py`**:
+  - Updated `handle_send_chat_message` and `_save_chat_log` to include the image path in the chat logs.
+- **`app/main.py`**:
+  - Updated the `on_send_chat_message` callback to pass the `image_path` to the handler.
+
+### Fixed
+- **`ModuleNotFoundError`**: Installed the `Pillow` library to resolve the `No module named 'PIL'` error.
+- **Gemini API Errors**:
+  - Fixed `AttributeError: 'Client' object has no attribute 'get_model'`.
+  - Fixed `AttributeError: module 'google.genai' has no attribute 'GenerativeModel'`.
+  - Fixed `404 NOT_FOUND` error for the `gemini-1.5-flash` model by changing the default model to `gemini-2.5-flash`.
+- **Configuration Loading Issues** (`app/alice_chat_manager.py`):
+  - Fixed model names not being read correctly from `.env` file
+    - Changed from `getattr(self.config, 'GEMINI_MODEL')` to `getattr(self.config, 'ALICE_CHAT_CONFIG', {}).get('gemini_model')`
+    - Changed from `getattr(self.config, 'OPENAI_MODEL')` to `getattr(self.config, 'ALICE_CHAT_CONFIG', {}).get('openai_model')`
+    - Now correctly reads `GEMINI_MODEL` and `OPENAI_MODEL_NAME` from `.env` file
+  - Fixed system instruction not being sent to Gemini API
+    - Added `config=types.GenerateContentConfig(system_instruction=self.system_instruction)` to API call
+    - System prompt from `data/notes/0-System-Prompt.md` now properly affects Alice's behavior
+  - Added console output for system instruction before API calls for both Gemini and OpenAI
+    - Shows `--- [System Instruction] ---` section with full system prompt content
+    - Improves debugging and verification of API requests
+
 ## [3.2.0] - 2025-10-15
 
 ### Added

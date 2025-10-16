@@ -12,6 +12,9 @@ google-genai>=1.38.0  # Google Gemini API for Alice chat
 openai>=1.0.0  # OpenAI API for Alice chat (alternative)
 ollama>=0.5.0  # Local AI model support for analysis plugins
 
+# Image Processing
+Pillow>=10.0.0  # For image handling with Alice
+
 # Note: Standard library modules used (no additional requirements):
 # - asyncio, threading (async operations)
 # - json, os, sys, pathlib (file operations)

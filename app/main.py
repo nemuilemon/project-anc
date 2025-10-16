@@ -16,6 +16,7 @@ from threading import Thread, Event
 from state_manager import AppState
 
 def main(page: ft.Page):
+    print("[DIAGNOSTIC] Entered main(page)")
     """Project A.N.C.のメイン関数。
     
     アプリケーションの初期化、各コンポーネントの連携、
@@ -49,6 +50,7 @@ def main(page: ft.Page):
             app_logger.log_ui_event("page_title_set", "main_page", page.title)
             
             # ディレクトリの安全な作成
+            print("[DIAGNOSTIC] Creating directories...")
             try:
                 if not os.path.exists(config.NOTES_DIR):
                     os.makedirs(config.NOTES_DIR, exist_ok=True)
@@ -65,8 +67,10 @@ def main(page: ft.Page):
                 page.snack_bar.open = True
                 page.update()
                 return
+            print("[DIAGNOSTIC] Directories created.")
             
             # データベースの安全な初期化
+            print("[DIAGNOSTIC] Initializing database...")
             try:
                 db = TinyDB(config.DB_FILE)
                 app_logger.log_database_operation("initialize", "main_db", True, config.DB_FILE)
@@ -76,8 +80,10 @@ def main(page: ft.Page):
                 page.snack_bar.open = True
                 page.update()
                 return
+            print("[DIAGNOSTIC] Database initialized.")
 
             # アプリケーションロジックの初期化
+            print("[DIAGNOSTIC] Initializing AppLogic...")
             try:
                 app_logic = AppLogic(db)
                 app_logger.main_logger.info("Application logic initialized successfully")
@@ -91,6 +97,7 @@ def main(page: ft.Page):
                 page.snack_bar.open = True
                 page.update()
                 return
+            print("[DIAGNOSTIC] AppLogic initialized.")
                 
         except Exception as e:
             app_logger.log_error(e, "critical_application_initialization")
@@ -105,16 +112,21 @@ def main(page: ft.Page):
     cancel_event = Event()
 
     # Initialize AppState with persistence
+    print("[DIAGNOSTIC] Initializing AppState...")
     from state_manager import app_state
     persistence_file = os.path.join(config.DATA_DIR, 'conversation_state.json')
     app_state._persistence_file = persistence_file
     app_state.load_conversations(persistence_file)
     app_logger.main_logger.info(f"AppState initialized with persistence file: {persistence_file}")
+    print("[DIAGNOSTIC] AppState initialized.")
 
     # Create centralized event handlers (app_ui will be set later)
-    handlers = AppHandlers(page, app_logic, None, cancel_event)
+    print("[DIAGNOSTIC] Initializing AppHandlers...")
+    handlers = AppHandlers(page, AppLogic, None, cancel_event)
+    print("[DIAGNOSTIC] AppHandlers initialized.")
     
     # RedesignedAppUIのインスタンス作成とエラーハンドリング
+    print("[DIAGNOSTIC] Initializing RedesignedAppUI...")
     try:
         app_ui = RedesignedAppUI(
             page,
@@ -137,7 +149,7 @@ def main(page: ft.Page):
             # Available AI functions for dynamic dropdown
             available_ai_functions=available_ai_functions,
             # Chat functionality
-            on_send_chat_message=handlers.handle_send_chat_message,
+            on_send_chat_message=lambda user_message, alice_response, image_path: handlers.handle_send_chat_message(user_message, alice_response, image_path),
             config=config,
             # AppState for conversation management
             app_state=app_state
@@ -154,9 +166,12 @@ def main(page: ft.Page):
 
         # 新しいUIではappbarは使用しないため、設定を省略
         # page.appbar = app_ui.appbar  # コメントアウト
+        print("[DIAGNOSTIC] RedesignedAppUI initialized. Building and adding to page...")
         page.add(app_ui.build())
+        print("[DIAGNOSTIC] UI added to page.")
 
         # 初期ファイルリストの読み込み
+        print("[DIAGNOSTIC] Loading initial file list...")
         try:
             with PerformanceTimer("Initial file list load"):
                 initial_files = app_logic.get_file_list()
@@ -168,6 +183,7 @@ def main(page: ft.Page):
             page.snack_bar = ft.SnackBar(content=ft.Text("ファイルリストの初期読み込みでエラーが発生しました。"))
             page.snack_bar.open = True
             page.update()
+        print("[DIAGNOSTIC] Initial file list loaded.")
             
     except Exception as e:
         app_logger.log_error(e, "ui_creation")
@@ -179,6 +195,7 @@ def main(page: ft.Page):
     
     # Log successful application startup
     app_logger.main_logger.info("Application initialization completed successfully")
+    print("[DIAGNOSTIC] main() function finished successfully.")
     
     # Register cleanup on page close
     def on_page_close(e):
@@ -203,16 +220,19 @@ def main(page: ft.Page):
 # アプリケーションエントリーポイントのセーフラッパー
 def safe_main():
     """アプリケーションのメイン関数を安全に実行するラッパー"""
+    print("[DIAGNOSTIC] Entered safe_main()"),
     try:
         # Get absolute path to assets directory
         project_root = Path(__file__).parent.parent
         assets_path = project_root / "assets"
 
         # Run with assets_dir specified for flet run compatibility
+        print("[DIAGNOSTIC] Calling ft.app()...")
         ft.app(
             target=main,
             assets_dir=str(assets_path) if assets_path.exists() else None
         )
+        print("[DIAGNOSTIC] ft.app() exited.")
     except Exception as e:
         print(f"Critical application error: {e}")
         print("Please check your configuration and try again.")

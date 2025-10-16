@@ -119,7 +119,7 @@ class NippoCreationManager:
             print(f"Nippo creation prompt prepared: {len(final_prompt)} characters")
 
             # Get model name from config
-            model_name = getattr(self.config, 'ALICE_CHAT_CONFIG', {}).get('model', 'gemini-2.5-pro')
+            model_name = getattr(self.config, 'ALICE_CHAT_CONFIG', {}).get('gemini_model', 'gemini-2.5-flash')
 
             # Make API request
             response = self.client.models.generate_content(

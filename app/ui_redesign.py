@@ -31,6 +31,10 @@ class MainConversationArea(ft.Container):
         self.on_send_message = on_send_message
         self.alice_chat_manager = alice_chat_manager
         self.app_state = app_state
+        self.selected_image_path = None
+
+        # ファイルピッカー
+        self.file_picker = ft.FilePicker(on_result=self._on_file_picker_result)
 
         # タブごとのチャット履歴表示エリア（session_id -> ListView）
         self.conversation_views = {}
@@ -71,12 +75,28 @@ class MainConversationArea(ft.Container):
             )
         )
 
-        # ファイル添付ボタン（将来的な拡張用）
+        # ファイル添付ボタン
         self.attach_file_button = ft.IconButton(
             icon=ft.Icons.ATTACH_FILE,
-            tooltip="ファイルを添付",
-            on_click=self._attach_file,
-            disabled=True  # 将来実装
+            tooltip="画像を添付",
+            on_click=lambda _: self.file_picker.pick_files(
+                allow_multiple=False,
+                allowed_extensions=["jpg", "jpeg", "png", "gif"]
+            )
+        )
+
+        # 画像プレビューエリア
+        self.image_preview = ft.Container(
+            visible=False,
+            padding=ft.padding.all(10),
+            border_radius=10,
+            content=ft.Row([
+                ft.Image(width=100, height=100),
+                ft.IconButton(
+                    icon=ft.Icons.CLOSE,
+                    on_click=self._clear_image_preview
+                )
+            ])
         )
 
         # 会話コントロールボタン群
@@ -149,7 +169,10 @@ class MainConversationArea(ft.Container):
 
             # 入力エリア
             ft.Container(
-                content=self.input_row,
+                content=ft.Column([
+                    self.image_preview,
+                    self.input_row
+                ]),
                 padding=ft.padding.all(15),
                 bgcolor=ft.Colors.GREY_50,
                 border_radius=10,
@@ -167,25 +190,42 @@ class MainConversationArea(ft.Container):
     def did_mount(self):
         """コントロールがページに追加された後に呼ばれる"""
         if not self._initialized:
+            self.page.overlay.append(self.file_picker)
+            self.page.update()
             self._initialize_conversations()
             self._initialized = True
+
+    def _on_file_picker_result(self, e: ft.FilePickerResultEvent):
+        if e.files:
+            self.selected_image_path = e.files[0].path
+            self.image_preview.content.controls[0].src = self.selected_image_path
+            self.image_preview.visible = True
+            self.image_preview.update()
+
+    def _clear_image_preview(self, e=None):
+        self.selected_image_path = None
+        self.image_preview.visible = False
+        self.image_preview.update()
 
     def _send_message(self, e=None):
         """メッセージ送信処理"""
         message = self.message_input.value.strip()
-        if not message:
+        image_path = self.selected_image_path
+
+        if not message and not image_path:
             return
 
         # ユーザーメッセージを表示
-        self._add_message("User", message, is_user=True)
+        self._add_message("User", message, image_path=image_path, is_user=True)
 
-        # 入力フィールドをクリア
+        # 入力フィールドと画像プレビューをクリア
         self.message_input.value = ""
         self.message_input.update()
+        self._clear_image_preview()
 
         # AIアシスタントにメッセージを送信
         if self.on_send_message:
-            self.on_send_message(message)
+            self.on_send_message(message, image_path)
 
     def show_thinking_indicator(self):
         """AIの思考中インジケーターを表示"""
@@ -225,28 +265,43 @@ class MainConversationArea(ft.Container):
                 self.chat_history_view.controls.remove(self.thinking_indicator)
                 self.chat_history_view.update()
 
-    def _add_message(self, sender, content, is_user=True):
+    def _add_message(self, sender, content, image_path=None, is_user=True):
         """チャット履歴にメッセージを追加"""
         message_color = ft.Colors.BLUE_100 if is_user else ft.Colors.GREEN_100
         text_color = ft.Colors.BLUE_800 if is_user else ft.Colors.GREEN_800
 
+        message_content = [
+            ft.Row([
+                ft.Text(
+                    sender,
+                    weight=ft.FontWeight.BOLD,
+                    color=text_color,
+                    size=12
+                ),
+                ft.Text(
+                    f"{datetime.datetime.now().strftime('%H:%M')}",
+                    size=10,
+                    color=ft.Colors.GREY_600
+                )
+            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
+        ]
+
+        if image_path:
+            message_content.append(
+                ft.Image(
+                    src=image_path,
+                    width=200,
+                    height=200,
+                    fit=ft.ImageFit.CONTAIN,
+                    border_radius=ft.border_radius.all(10)
+                )
+            )
+
+        if content:
+            message_content.append(ft.Markdown(content, selectable=True, extension_set="gitHubWeb"))
+
         message_container = ft.Container(
-            content=ft.Column([
-                ft.Row([
-                    ft.Text(
-                        sender,
-                        weight=ft.FontWeight.BOLD,
-                        color=text_color,
-                        size=12
-                    ),
-                    ft.Text(
-                        f"{datetime.datetime.now().strftime('%H:%M')}",
-                        size=10,
-                        color=ft.Colors.GREY_600
-                    )
-                ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-                ft.Markdown(content, selectable=True, extension_set="gitHubWeb")
-            ]),
+            content=ft.Column(message_content),
             bgcolor=message_color,
             padding=ft.padding.all(10),
             border_radius=10,
@@ -836,6 +891,7 @@ class RedesignedAppUI:
                  on_get_automation_preview=None, available_ai_functions=None,
                  on_send_chat_message=None, config=None, app_state=None):
 
+        print("[DIAGNOSTIC] Entered RedesignedAppUI.__init__")
         self.page = page
         self.app_state = app_state
         self.config = config  # 設定を保存（再初期化用）
@@ -859,16 +915,20 @@ class RedesignedAppUI:
             'on_get_automation_preview': on_get_automation_preview,
             'on_send_chat_message': on_send_chat_message
         }
+        print("[DIAGNOSTIC] RedesignedAppUI callbacks stored.")
 
         # Alice Chat Managerを初期化
+        print("[DIAGNOSTIC] Initializing AliceChatManager in UI...")
         self.alice_chat_manager = None
         if config and on_send_chat_message:
             try:
                 self.alice_chat_manager = AliceChatManager(config)
             except Exception as e:
                 print(f"Failed to initialize Alice Chat Manager: {e}")
+        print(f"[DIAGNOSTIC] AliceChatManager instance: {self.alice_chat_manager}")
 
         # Memory Creation Managerを初期化
+        print("[DIAGNOSTIC] Initializing MemoryCreationManager in UI...")
         self.memory_creation_manager = None
         self.memories_dir = None
         if config:
@@ -877,8 +937,10 @@ class RedesignedAppUI:
                 self.memories_dir = getattr(config, 'MEMORIES_DIR', None)
             except Exception as e:
                 print(f"Failed to initialize Memory Creation Manager: {e}")
+        print(f"[DIAGNOSTIC] MemoryCreationManager instance: {self.memory_creation_manager}")
 
         # Nippo Creation Managerを初期化
+        print("[DIAGNOSTIC] Initializing NippoCreationManager in UI...")
         self.nippo_creation_manager = None
         self.nippo_dir = None
         if config:
@@ -887,6 +949,7 @@ class RedesignedAppUI:
                 self.nippo_dir = getattr(config, 'NIPPO_DIR', None)
             except Exception as e:
                 print(f"Failed to initialize Nippo Creation Manager: {e}")
+        print(f"[DIAGNOSTIC] NippoCreationManager instance: {self.nippo_creation_manager}")
 
         # ファイル操作コールバックを整理
         file_operations = {
@@ -897,6 +960,7 @@ class RedesignedAppUI:
         }
 
         # メインUIコンポーネントを作成
+        print("[DIAGNOSTIC] Initializing ConversationFirstUI...")
         self.ui = ConversationFirstUI(
             page=page,
             on_send_message=self._handle_chat_message,
@@ -912,6 +976,7 @@ class RedesignedAppUI:
             app_state=app_state,
             on_settings_changed=self.reinitialize_alice_chat_manager
         )
+        print("[DIAGNOSTIC] ConversationFirstUI initialized.")
 
     def build(self):
         """UIコンポーネントを構築して返す"""
@@ -967,15 +1032,15 @@ class RedesignedAppUI:
                 return f"ファイル読み込みエラー: {str(e)}"
         return ""
 
-    def _handle_chat_message(self, message):
-        """チャッâメッセージの処理"""
+    def _handle_chat_message(self, message, image_path=None):
+        """チャットメッセージの処理"""
         if self.alice_chat_manager:
             try:
                 # AIが応答を生成している間にインジケーターを表示
                 self.ui.conversation_area.show_thinking_indicator()
 
                 # Alice Chat Managerを使用してAIからの応答を取得
-                response = self.alice_chat_manager.send_message(message)
+                response = self.alice_chat_manager.send_message(message, image_path=image_path)
 
                 # インジケーターを非表示にしてから応答を表示
                 self.ui.conversation_area.hide_thinking_indicator()
@@ -985,7 +1050,7 @@ class RedesignedAppUI:
 
                 # チャットログを保存（ハンドラー経由）
                 if self.callbacks['on_send_chat_message']:
-                    self.callbacks['on_send_chat_message'](message, response)
+                    self.callbacks['on_send_chat_message'](message, response, image_path)
 
                 # 会話状態を永続化ファイルに保存
                 if self.app_state:
