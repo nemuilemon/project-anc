@@ -107,6 +107,9 @@ COMPASS_API_BASE_URL = os.environ.get('COMPASS_API_BASE_URL', 'http://127.0.0.1:
 # Compass API エンドポイントタイプ: "search" または "graph_search"
 COMPASS_API_ENDPOINT = os.environ.get('COMPASS_API_ENDPOINT', 'search')
 
+# Compass API Key (optional authentication)
+COMPASS_API_KEY = os.environ.get('COMPASS_API_KEY', None)
+
 # Compass API リクエスト設定
 COMPASS_API_CONFIG = {
     "target": os.environ.get('COMPASS_API_TARGET', 'content'),

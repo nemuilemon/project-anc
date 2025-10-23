@@ -5,6 +5,34 @@ All notable changes to Project A.N.C. (Alice Nexus Core) will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.3.1] - 2025-10-23
+
+### Added
+- **Compass API Authentication Support**: Added support for API key authentication when connecting to compass-api
+  - New environment variable `COMPASS_API_KEY` for storing API credentials
+  - Authorization header with Bearer token automatically added to Compass API requests
+  - Optional authentication - backward compatible with non-authenticated compass-api instances
+  - Debug logging when Authorization header is used
+
+### Changed
+- **`.env.example`**: Added `COMPASS_API_KEY` configuration option in Compass API section
+  - Clearly documented as optional authentication parameter
+  - Includes example placeholder value
+- **`config/config.py`**: Added `COMPASS_API_KEY` environment variable loading
+  - Reads from `COMPASS_API_KEY` env var with `None` as default
+  - Maintains backward compatibility when API key is not provided
+- **`app/alice_chat_manager.py`**: Enhanced `_get_past_conversations_from_compass_api()` method
+  - Loads API key from configuration
+  - Constructs HTTP headers with `Authorization: Bearer {api_key}` when key is present
+  - Passes headers to `requests.post()` for authenticated API calls
+  - Added debug log message confirming Authorization header usage
+
+### Technical Details
+- Backward compatible: Works with both authenticated and non-authenticated compass-api instances
+- Security: API key is only read from environment variables, never hardcoded
+- Debugging: Clear console messages indicate when authentication is being used
+- Standards compliant: Uses standard Bearer token authentication pattern
+
 ## [3.3.0] - 2025-10-16
 
 ### Added

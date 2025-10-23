@@ -1,5 +1,5 @@
 @echo off
-echo ã‚ã‚Šã™ã‚’èµ·å‹•ã—ã¦ã„ã¾ã™...
+echo ‚ ‚è‚·‚ð‹N“®‚µ‚Ä‚¢‚Ü‚·...
 call .\.venv\Scripts\activate.bat
-echo ç’°å¢ƒã®æº–å‚™ãŒã§ãã¾ã—ãŸã€‚A.N.C.ã‚’èµ·å‹•ã—ã¾ã™ã€‚
+echo ŠÂ‹«‚Ì€”õ‚ª‚Å‚«‚Ü‚µ‚½BA.N.C.‚ð‹N“®‚µ‚Ü‚·B
 python main.py

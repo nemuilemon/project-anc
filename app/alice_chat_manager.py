@@ -416,6 +416,7 @@ class AliceChatManager:
 
         compass_api_base_url = getattr(self.config, 'COMPASS_API_BASE_URL', None)
         api_config = getattr(self.config, 'COMPASS_API_CONFIG', {})
+        compass_api_key = getattr(self.config, 'COMPASS_API_KEY', None)  # APIキーを読み込む
 
         if not compass_api_base_url:
             return None
@@ -439,13 +440,19 @@ class AliceChatManager:
             if endpoint_type == "graph_search":
                 payload["config"]["related_limit"] = api_config.get("related_limit", 3)
 
+            # ヘッダーに認証情報を追加
+            headers = {'Content-Type': 'application/json'}
+            if compass_api_key:
+                headers['Authorization'] = f'Bearer {compass_api_key}'
+                print("[Compass API] Using Authorization header.")  # デバッグ用ログ
+
             # デバッグ: 送信するpayloadをログ出力
             print(f"[Compass API] Endpoint: {compass_api_url}")
             print(f"[Compass API] Sending payload: {payload['config']}")
             print(f"[Compass API] Query text length: {len(query_text)} chars")
 
-            # タイムアウトを設定
-            response = requests.post(compass_api_url, json=payload, timeout=90)
+            # タイムアウトとヘッダーを設定してリクエスト
+            response = requests.post(compass_api_url, json=payload, headers=headers, timeout=90)
             response.raise_for_status()  # エラーがあれば例外を発生させる
 
             # JSONレスポンスをパース
