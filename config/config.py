@@ -117,6 +117,12 @@ COMPASS_API_CONFIG = {
     "endpoint": os.environ.get('COMPASS_API_ENDPOINT', 'search')
 }
 
+# Chat API Base URL (for API client migration)
+CHAT_API_BASE_URL = os.environ.get('CHAT_API_BASE_URL', 'http://localhost:8000')
+
+# Chat API Key (for authentication)
+COMPASS_API_KEY = os.environ.get('COMPASS_API_KEY', None)
+
 # Alice Chat 設定
 ALICE_CHAT_CONFIG = {
     "gemini_model": os.getenv('GEMINI_MODEL', 'gemini-2.5-flash'),  # Google Geminiモデル
@@ -124,4 +130,5 @@ ALICE_CHAT_CONFIG = {
     "max_history_length": int(os.getenv('MAX_HISTORY_LENGTH', '500')),  # 保持する会話履歴の最大件数
     "auto_save_interval": int(os.getenv('AUTO_SAVE_INTERVAL', '30')),  # 自動保存間隔（秒）
     "history_char_limit": int(os.environ.get('ALICE_HISTORY_CHAR_LIMIT', '4000')),  # 過去のログから読み込む文字数制限
+    "temperature": float(os.getenv('ALICE_TEMPERATURE', '1.0')),  # 温度パラメータ
 }

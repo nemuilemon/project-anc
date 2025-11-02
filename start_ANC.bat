@@ -1,5 +1,5 @@
 @echo off
-echo ありすを起動しています...
+echo ���ꤹ��ư���Ƥ��ޤ�...
 call .\.venv\Scripts\activate.bat
-echo 環境の準備ができました。A.N.C.を起動します。
+echo �Ķ��ν������Ǥ��ޤ�����A.N.C.��ư���ޤ���
 python main.py
