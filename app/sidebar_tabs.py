@@ -17,6 +17,9 @@ from ui_components import (
     SectionHeader
 )
 import sys
+import re
+import shutil
+from pathlib import Path
 
 # configをインポートするためにパスを追加
 sys.path.append(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'config'))
@@ -657,510 +660,6 @@ class NippoCreationTab(ft.Container):
         self.page.snack_bar = ft.SnackBar(content=ft.Text(message), bgcolor=ft.Colors.RED)
         self.page.snack_bar.open = True
         self.page.update()
-
-
-class FileTab(ft.Container):
-    """ファイル・タブ: プロジェクト内のディレクトリ構造を管理
-
-    Features:
-        - ツリー形式でディレクトリ構造表示
-        - ファイルの新規作成、削除、リネーム
-        - ファイルクリックでエディタエリアに表示
-    """
-
-    def __init__(self, on_file_select=None, on_file_create=None, on_file_delete=None, on_file_rename=None, **kwargs):
-        super().__init__(**kwargs)
-
-        self.on_file_select = on_file_select
-        self.on_file_create = on_file_create
-        self.on_file_delete = on_file_delete
-        self.on_file_rename = on_file_rename
-
-        # ファイルリスト表示エリア
-        self.file_tree = ft.Column(
-            scroll=ft.ScrollMode.AUTO,
-            expand=True,
-            controls=[]
-        )
-
-        # ファイル操作ボタン
-        self.create_file_button = ft.IconButton(
-            icon=ft.Icons.CREATE_NEW_FOLDER,
-            tooltip="新しいファイルを作成",
-            on_click=self._show_create_file_dialog
-        )
-
-        self.refresh_button = ft.IconButton(
-            icon=ft.Icons.REFRESH,
-            tooltip="ファイルリストを更新",
-            on_click=self._refresh_files
-        )
-
-        # 検索機能
-        self.search_field = ft.TextField(
-            hint_text="ファイル名で検索...",
-            dense=True,
-            prefix_icon=ft.Icons.SEARCH,
-            on_change=self._filter_files,
-            border=ft.InputBorder.OUTLINE
-        )
-
-        # フィルター状態
-        self.current_filter = ""
-        self.all_files = []  # すべてのファイル情報を保持
-
-        self.content = ft.Column(
-            [
-                # ヘッダー
-                ft.Container(
-                    content=ft.Row([
-                        ft.Text("プロジェクトファイル", size=14, weight=ft.FontWeight.BOLD),
-                        ft.Row([self.create_file_button, self.refresh_button], spacing=2)
-                    ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-                    padding=ft.padding.symmetric(horizontal=10, vertical=5),
-                    bgcolor=ft.Colors.BLUE_50,
-                    border_radius=5
-                ),
-
-                # 検索バー
-                ft.Container(
-                    content=self.search_field,
-                    padding=ft.padding.all(10)
-                ),
-
-                # ファイルツリー
-                ft.Container(
-                    content=self.file_tree,
-                    expand=True,
-                    border=ft.border.all(1, ft.Colors.GREY_300),
-                    border_radius=5,
-                    padding=ft.padding.all(5)
-                )
-            ],
-            scroll=ft.ScrollMode.AUTO,
-            expand=True
-        )
-
-    def load_files(self, file_list: List[Dict]):
-        """ファイルリストを読み込み、ツリー表示を更新"""
-        self.all_files = file_list
-        self._update_file_display()
-
-    def _update_file_display(self):
-        """現在のフィルターに基づいてファイル表示を更新"""
-        self.file_tree.controls.clear()
-
-        filtered_files = self.all_files
-        if self.current_filter:
-            filtered_files = [
-                f for f in self.all_files
-                if self.current_filter.lower() in f.get('title', '').lower()
-            ]
-
-        for file_info in filtered_files:
-            file_item = self._create_file_item(file_info)
-            self.file_tree.controls.append(file_item)
-
-        self.file_tree.update()
-
-    def _create_file_item(self, file_info: Dict) -> ft.Container:
-        """ファイル項目のUIコンポーネントを作成"""
-        file_name = file_info.get('title', 'Unknown')
-        tags = file_info.get('tags', [])
-        status = file_info.get('status', 'active')
-
-        # ステータスに応じたアイコンと色
-        if status == 'archived':
-            icon = ft.Icons.ARCHIVE
-            color = ft.Colors.GREY_600
-        else:
-            icon = ft.Icons.INSERT_DRIVE_FILE
-            color = ft.Colors.BLUE_600
-
-        return ft.Container(
-            content=ft.Row([
-                ft.Icon(icon, color=color, size=16),
-                ft.Column([
-                    ft.Text(file_name, size=12, weight=ft.FontWeight.BOLD),
-                    ft.Text(f"Tags: {', '.join(tags) if tags else 'None'}",
-                           size=10, color=ft.Colors.GREY_600)
-                ], spacing=2, expand=True),
-                ft.PopupMenuButton(
-                    items=[
-                        ft.PopupMenuItem(text="開く", on_click=lambda e, f=file_info: self._select_file(f)),
-                        ft.PopupMenuItem(text="名前変更", on_click=lambda e, f=file_info: self._rename_file(f)),
-                        ft.PopupMenuItem(text="タグ編集", on_click=lambda e, f=file_info: self._edit_tags(f)),
-                        ft.PopupMenuItem(),  # Separator
-                        ft.PopupMenuItem(text="削除", on_click=lambda e, f=file_info: self._delete_file(f))
-                    ]
-                )
-            ], spacing=5),
-            padding=ft.padding.all(8),
-            margin=ft.margin.symmetric(vertical=2),
-            bgcolor=ft.Colors.WHITE,
-            border=ft.border.all(1, ft.Colors.GREY_200),
-            border_radius=5,
-            on_click=lambda e, f=file_info: self._select_file(f)
-        )
-
-    def _select_file(self, file_info: Dict):
-        """ファイルを選択してエディタエリアに表示"""
-        if self.on_file_select:
-            self.on_file_select(file_info)
-
-    def _filter_files(self, e):
-        """ファイルをフィルタリング"""
-        self.current_filter = e.control.value
-        self._update_file_display()
-
-    def _refresh_files(self, e=None):
-        """ファイルリストを更新（外部から呼び出される）"""
-        # 実際のファイル更新は親コンポーネントで処理
-        pass
-
-    def _show_create_file_dialog(self, e=None):
-        """新規ファイル作成ダイアログを表示"""
-        # TODO: ファイル作成ダイアログの実装
-        pass
-
-    def _rename_file(self, file_info: Dict):
-        """ファイル名変更"""
-        if self.on_file_rename:
-            self.on_file_rename(file_info)
-
-    def _delete_file(self, file_info: Dict):
-        """ファイル削除"""
-        if self.on_file_delete:
-            self.on_file_delete(file_info)
-
-    def _edit_tags(self, file_info: Dict):
-        """タグ編集ダイアログを表示"""
-        file_path = file_info.get('path', '')
-        file_name = file_info.get('title', 'Unknown')
-        current_tags = file_info.get('tags', []).copy()  # Create a copy to avoid modifying original
-
-        # Tag chips container
-        tag_chips_row = ft.Row(wrap=True, spacing=5)
-
-        def update_tag_chips():
-            """Update the display of tag chips"""
-            tag_chips_row.controls.clear()
-            for tag in current_tags:
-                chip = ft.Container(
-                    content=ft.Row([
-                        ft.Text(tag, size=12, color=ft.Colors.WHITE),
-                        ft.IconButton(
-                            icon=ft.Icons.CLOSE,
-                            icon_size=14,
-                            icon_color=ft.Colors.WHITE,
-                            tooltip="削除",
-                            on_click=lambda e, t=tag: remove_tag(t)
-                        )
-                    ], spacing=2, tight=True),
-                    bgcolor=ft.Colors.BLUE_700,
-                    padding=ft.padding.symmetric(horizontal=8, vertical=4),
-                    border_radius=15
-                )
-                tag_chips_row.controls.append(chip)
-            tag_chips_row.update()
-
-        def remove_tag(tag):
-            """Remove a tag from the list"""
-            if tag in current_tags:
-                current_tags.remove(tag)
-                update_tag_chips()
-
-        def add_tag(e=None):
-            """Add a new tag"""
-            new_tag = new_tag_field.value.strip()
-            if new_tag and new_tag not in current_tags:
-                current_tags.append(new_tag)
-                new_tag_field.value = ""
-                new_tag_field.update()
-                update_tag_chips()
-
-        def save_tags(e):
-            """Save the updated tags"""
-            # Call the handler with the updated tag list
-            if hasattr(self, 'page') and self.page:
-                # Import handler at runtime to avoid circular dependency
-                from handlers import AppHandlers
-                # Get the handlers instance from page data if available
-                if hasattr(self.page, 'data') and 'handlers' in self.page.data:
-                    handlers = self.page.data['handlers']
-                    handlers.handle_update_tags(file_path, current_tags)
-
-            # Update local file info
-            file_info['tags'] = current_tags.copy()
-
-            # Refresh the file display
-            self._update_file_display()
-
-            # Close dialog
-            dialog.open = False
-            self.page.update()
-
-        def close_dialog(e):
-            """Close the dialog without saving"""
-            dialog.open = False
-            self.page.update()
-
-        # New tag input field
-        new_tag_field = ft.TextField(
-            label="新しいタグ",
-            hint_text="タグ名を入力してEnter",
-            dense=True,
-            on_submit=add_tag,
-            expand=True
-        )
-
-        add_tag_button = ft.IconButton(
-            icon=ft.Icons.ADD,
-            tooltip="タグを追加",
-            on_click=add_tag
-        )
-
-        # Create dialog
-        dialog = ft.AlertDialog(
-            title=ft.Text(f"タグ編集: {file_name}"),
-            content=ft.Container(
-                content=ft.Column([
-                    ft.Text("現在のタグ:", weight=ft.FontWeight.BOLD, size=12),
-                    ft.Container(
-                        content=tag_chips_row if current_tags else ft.Text("タグなし", color=ft.Colors.GREY_600, size=12),
-                        padding=ft.padding.all(10),
-                        border=ft.border.all(1, ft.Colors.GREY_300),
-                        border_radius=5,
-                        min_height=60
-                    ),
-                    ft.Divider(),
-                    ft.Row([new_tag_field, add_tag_button], spacing=5)
-                ], spacing=10, tight=True),
-                width=400
-            ),
-            actions=[
-                ft.TextButton("キャンセル", on_click=close_dialog),
-                ft.ElevatedButton("保存", on_click=save_tags)
-            ],
-            actions_alignment=ft.MainAxisAlignment.END
-        )
-
-        # Initialize tag chips
-        update_tag_chips()
-
-        # Show dialog
-        if hasattr(self, 'page') and self.page:
-            self.page.overlay.append(dialog)
-            dialog.open = True
-            self.page.update()
-
-
-class EditorArea(ft.Container):
-    """エディタ・エリア: サイドバー内に埋め込まれたコードエディタ
-
-    Features:
-        - 複数ファイルのタブ形式編集
-        - シンタックスハイライト
-        - 基本的なコード補完
-        - オートセーブ機能
-    """
-
-    def __init__(self, on_save_file=None, **kwargs):
-        super().__init__(**kwargs)
-
-        self.on_save_file = on_save_file
-        self.open_tabs = {}  # ファイルパス -> タブ情報
-        self.active_file = None
-
-        # エディタタブ
-        self.editor_tabs = ft.Tabs(
-            selected_index=-1,
-            animation_duration=200,
-            tabs=[],
-            on_change=self._tab_changed
-        )
-
-        # デフォルト表示（何も開いていない状態）
-        self.welcome_content = ft.Container(
-            content=ft.Column([
-                ft.Icon(ft.Icons.EDIT_NOTE, size=64, color=ft.Colors.GREY_400),
-                ft.Text(
-                    "ファイルを選択してください",
-                    size=14,
-                    color=ft.Colors.GREY_600,
-                    text_align=ft.TextAlign.CENTER
-                ),
-                ft.Text(
-                    "ファイルタブから編集したいファイルを\n選択すると、ここに表示されます",
-                    size=12,
-                    color=ft.Colors.GREY_500,
-                    text_align=ft.TextAlign.CENTER
-                )
-            ],
-            alignment=ft.MainAxisAlignment.CENTER,
-            horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-            expand=True
-        )
-
-        self.content = ft.Column(
-            [
-                # ヘッダー
-                ft.Container(
-                    content=ft.Text("エディタ", size=14, weight=ft.FontWeight.BOLD),
-                    padding=ft.padding.symmetric(horizontal=10, vertical=5),
-                    bgcolor=ft.Colors.GREEN_50,
-                    border_radius=5
-                ),
-
-                # エディタタブまたは初期表示
-                ft.Container(
-                    content=self.welcome_content,
-                    expand=True,
-                    border=ft.border.all(1, ft.Colors.GREY_300),
-                    border_radius=5
-                )
-            ],
-            scroll=ft.ScrollMode.AUTO,
-            expand=True
-        )
-
-    def open_file(self, file_info: Dict, content: str = ""):
-        """ファイルをエディタで開く"""
-        file_path = file_info.get('path', '')
-        file_name = file_info.get('title', 'Untitled')
-
-        if file_path in self.open_tabs:
-            # すでに開いているファイルのタブにフォーカス
-            for i, tab in enumerate(self.editor_tabs.tabs):
-                if tab.data == file_path:
-                    self.editor_tabs.selected_index = i
-                    self.editor_tabs.update()
-                    break
-            return
-
-        # 新しいタブを作成
-        editor_field = ft.TextField(
-            value=content,
-            multiline=True,
-            expand=True,
-            border=ft.InputBorder.NONE,
-            text_style=ft.TextStyle(font_family="Consolas"),
-            on_change=self._content_changed
-        )
-
-        tab_content = ft.Container(
-            content=ft.Column([
-                # ファイル操作ボタン
-                ft.Row([
-                    ft.IconButton(
-                        icon=ft.Icons.SAVE,
-                        tooltip="保存",
-                        on_click=lambda e, path=file_path: self._save_file(path)
-                    ),
-                    ft.IconButton(
-                        icon=ft.Icons.CLOSE,
-                        tooltip="閉じる",
-                        on_click=lambda e, path=file_path: self._close_tab(path)
-                    )
-                ], spacing=2),
-                editor_field
-            ]),
-            expand=True,
-            padding=ft.padding.all(5)
-        )
-
-        new_tab = ft.Tab(
-            text=file_name,
-            content=tab_content,
-        )
-        new_tab.data = file_path  # ファイルパスを保存
-
-        self.editor_tabs.tabs.append(new_tab)
-        self.open_tabs[file_path] = {
-            'info': file_info,
-            'editor': editor_field,
-            'modified': False
-        }
-
-        # タブコンテンツを表示に更新
-        if len(self.editor_tabs.tabs) == 1:
-            self.content.controls[1] = ft.Container(
-                content=self.editor_tabs,
-                expand=True,
-                border=ft.border.all(1, ft.Colors.GREY_300),
-                border_radius=5
-            )
-
-        self.editor_tabs.selected_index = len(self.editor_tabs.tabs) - 1
-        self.active_file = file_path
-        self.update()
-
-    def _tab_changed(self, e):
-        """タブが変更された時の処理"""
-        if e.control.selected_index >= 0 and e.control.selected_index < len(e.control.tabs):
-            selected_tab = e.control.tabs[e.control.selected_index]
-            self.active_file = selected_tab.data
-
-    def _content_changed(self, e):
-        """エディタの内容が変更された時の処理"""
-        if self.active_file and self.active_file in self.open_tabs:
-            self.open_tabs[self.active_file]['modified'] = True
-            # タブタイトルに * を追加して変更を示す
-            for tab in self.editor_tabs.tabs:
-                if tab.data == self.active_file:
-                    if not tab.text.endswith('*'):
-                        tab.text += '*'
-                    break
-            self.editor_tabs.update()
-
-    def _save_file(self, file_path: str):
-        """ファイルを保存"""
-        if file_path in self.open_tabs:
-            tab_info = self.open_tabs[file_path]
-            content = tab_info['editor'].value
-
-            if self.on_save_file:
-                self.on_save_file(file_path, content)
-
-            # 変更フラグをクリア
-            tab_info['modified'] = False
-            for tab in self.editor_tabs.tabs:
-                if tab.data == file_path:
-                    tab.text = tab.text.rstrip('*')
-                    break
-            self.editor_tabs.update()
-
-    def _close_tab(self, file_path: str):
-        """タブを閉じる"""
-        if file_path not in self.open_tabs:
-            return
-
-        # 変更がある場合の確認は省略（今回は単純に閉じる）
-        tab_index = -1
-        for i, tab in enumerate(self.editor_tabs.tabs):
-            if tab.data == file_path:
-                tab_index = i
-                break
-
-        if tab_index >= 0:
-            self.editor_tabs.tabs.pop(tab_index)
-            del self.open_tabs[file_path]
-
-            # タブが全部なくなったら初期表示に戻す
-            if not self.editor_tabs.tabs:
-                self.content.controls[1] = ft.Container(
-                    content=self.welcome_content,
-                    expand=True,
-                    border=ft.border.all(1, ft.Colors.GREY_300),
-                    border_radius=5
-                )
-                self.active_file = None
-            else:
-                # アクティブタブを調整
-                if self.editor_tabs.selected_index >= len(self.editor_tabs.tabs):
-                    self.editor_tabs.selected_index = len(self.editor_tabs.tabs) - 1
-
-            self.update()
 
 
 class AutomationAnalysisTab(ft.Container):
@@ -1816,82 +1315,92 @@ class SettingsTab(ft.Container):
             raise
 
     def _update_env_file(self, api_provider, char_limit, compass_api_base_url, compass_config):
-        """.env ファイルを更新してAPIキーと全ての設定を保存"""
+        """.env ファイルを更新してAPIキーと全ての設定を保存
+
+        既存ファイルの構造とコメントを保持し、変更された値のみを更新する。
+        """
         try:
             # .env ファイルのパス
             project_root = os.path.dirname(os.path.dirname(__file__))
-            env_file = os.path.join(project_root, '.env')
+            env_file = Path(project_root) / '.env'
+            backup_file = Path(project_root) / '.env.backup'
 
-            # 既存の .env ファイルを読み込み
-            env_vars = {}
-            if os.path.exists(env_file):
-                with open(env_file, 'r', encoding='utf-8') as f:
-                    for line in f:
-                        line = line.strip()
-                        if line and not line.startswith('#') and '=' in line:
-                            key, value = line.split('=', 1)
-                            env_vars[key.strip()] = value.strip()
+            # バックアップ作成
+            if env_file.exists():
+                shutil.copy2(env_file, backup_file)
+                print(f"Backup created: {backup_file}")
 
-            # API Provider を更新
-            env_vars['CHAT_API_PROVIDER'] = api_provider
+            # UIで変更される設定値を辞書にまとめる
+            updated_values = {
+                'ALICE_HISTORY_CHAR_LIMIT': str(char_limit),
+                'COMPASS_API_BASE_URL': compass_api_base_url,
+                'COMPASS_API_ENDPOINT': compass_config.get('endpoint', 'search'),
+                'COMPASS_API_TARGET': compass_config.get('target', 'content'),
+                'COMPASS_API_LIMIT': str(compass_config.get('limit', 5)),
+                'COMPASS_API_RELATED_LIMIT': str(compass_config.get('related_limit', 3)),
+                'COMPASS_API_COMPRESS': str(compass_config.get('compress', False)),
+            }
 
             # APIキーを更新（空でない場合のみ）
             if self.gemini_api_key_field.value:
-                env_vars['GEMINI_API_KEY'] = self.gemini_api_key_field.value
+                updated_values['GEMINI_API_KEY'] = self.gemini_api_key_field.value
             if self.openai_api_key_field.value:
-                env_vars['OPENAI_API_KEY'] = self.openai_api_key_field.value
+                updated_values['OPENAI_API_KEY'] = self.openai_api_key_field.value
 
-            # Alice Chat設定を更新
-            env_vars['ALICE_HISTORY_CHAR_LIMIT'] = str(char_limit)
+            # 既存ファイルを読み込み（存在しない場合は空リスト）
+            existing_lines = []
+            if env_file.exists():
+                with open(env_file, 'r', encoding='utf-8') as f:
+                    existing_lines = f.readlines()
 
-            # Compass API設定を更新
-            env_vars['COMPASS_API_BASE_URL'] = compass_api_base_url
-            env_vars['COMPASS_API_ENDPOINT'] = compass_config.get('endpoint', 'search')
-            env_vars['COMPASS_API_TARGET'] = compass_config.get('target', 'content')
-            env_vars['COMPASS_API_LIMIT'] = str(compass_config.get('limit', 5))
-            env_vars['COMPASS_API_RELATED_LIMIT'] = str(compass_config.get('related_limit', 3))
-            env_vars['COMPASS_API_COMPRESS'] = str(compass_config.get('compress', False))
-            env_vars['COMPASS_API_SEARCH_MODE'] = compass_config.get('search_mode', 'latest')
+            # 行単位で処理し、変更された値のみを置換
+            updated_keys = set()
+            new_lines = []
 
-            # .env ファイルに書き込み
+            for line in existing_lines:
+                # コメント行や空行はそのまま保持
+                if line.strip().startswith('#') or not line.strip():
+                    new_lines.append(line)
+                    continue
+
+                # KEY=value形式を検出
+                match = re.match(r'^([A-Z_][A-Z0-9_]*)=(.*)$', line.strip())
+                if match:
+                    key = match.group(1)
+                    # UIで変更された値があれば置換
+                    if key in updated_values:
+                        new_lines.append(f"{key}={updated_values[key]}\n")
+                        updated_keys.add(key)
+                    else:
+                        # 変更されていない値はそのまま保持
+                        new_lines.append(line)
+                else:
+                    # KEY=value形式でない行もそのまま保持
+                    new_lines.append(line)
+
+            # 新規追加された設定項目を末尾に追記
+            new_keys = set(updated_values.keys()) - updated_keys
+            if new_keys:
+                # 末尾に改行がない場合は追加
+                if new_lines and not new_lines[-1].endswith('\n'):
+                    new_lines.append('\n')
+                new_lines.append("\n# Added via Settings UI\n")
+                for key in sorted(new_keys):
+                    new_lines.append(f"{key}={updated_values[key]}\n")
+
+            # ファイルに書き込み
             with open(env_file, 'w', encoding='utf-8') as f:
-                f.write("# Project A.N.C. Environment Variables\n")
-                f.write("# Updated via Settings UI\n\n")
+                f.writelines(new_lines)
 
-                f.write("# API Provider (google or openai)\n")
-                f.write(f"CHAT_API_PROVIDER={env_vars.get('CHAT_API_PROVIDER', 'google')}\n\n")
-
-                f.write("# Google Gemini API Key\n")
-                f.write(f"GEMINI_API_KEY={env_vars.get('GEMINI_API_KEY', '')}\n\n")
-
-                f.write("# OpenAI API Key\n")
-                f.write(f"OPENAI_API_KEY={env_vars.get('OPENAI_API_KEY', '')}\n\n")
-
-                f.write("# Alice Chat Configuration\n")
-                f.write(f"ALICE_HISTORY_CHAR_LIMIT={env_vars.get('ALICE_HISTORY_CHAR_LIMIT', '4000')}\n\n")
-
-                f.write("# Compass API Configuration\n")
-                f.write(f"COMPASS_API_BASE_URL={env_vars.get('COMPASS_API_BASE_URL', 'http://127.0.0.1:8000')}\n")
-                f.write(f"COMPASS_API_ENDPOINT={env_vars.get('COMPASS_API_ENDPOINT', 'search')}\n")
-                f.write(f"COMPASS_API_TARGET={env_vars.get('COMPASS_API_TARGET', 'content')}\n")
-                f.write(f"COMPASS_API_LIMIT={env_vars.get('COMPASS_API_LIMIT', '5')}\n")
-                f.write(f"COMPASS_API_RELATED_LIMIT={env_vars.get('COMPASS_API_RELATED_LIMIT', '3')}\n")
-                f.write(f"COMPASS_API_COMPRESS={env_vars.get('COMPASS_API_COMPRESS', 'False')}\n")
-                f.write(f"COMPASS_API_SEARCH_MODE={env_vars.get('COMPASS_API_SEARCH_MODE', 'latest')}\n\n")
-
-                # 他の既存の環境変数も保持
-                excluded_keys = [
-                    'CHAT_API_PROVIDER', 'GEMINI_API_KEY', 'OPENAI_API_KEY',
-                    'ALICE_HISTORY_CHAR_LIMIT', 'COMPASS_API_BASE_URL', 'COMPASS_API_ENDPOINT',
-                    'COMPASS_API_TARGET', 'COMPASS_API_LIMIT', 'COMPASS_API_RELATED_LIMIT',
-                    'COMPASS_API_COMPRESS', 'COMPASS_API_SEARCH_MODE'
-                ]
-                for key, value in env_vars.items():
-                    if key not in excluded_keys:
-                        f.write(f"{key}={value}\n")
-
-            print(f".env file updated successfully with all settings")
+            print(f".env file updated successfully (modified {len(updated_keys)} keys, added {len(new_keys)} keys)")
 
         except Exception as ex:
+            # エラー発生時はバックアップからロールバック
+            if backup_file.exists():
+                try:
+                    shutil.copy2(backup_file, env_file)
+                    print(f"Rolled back to backup due to error")
+                except Exception as rollback_ex:
+                    print(f"Rollback failed: {rollback_ex}")
             print(f".env ファイルの更新中にエラーが発生しました: {ex}")
             raise

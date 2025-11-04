@@ -7,6 +7,7 @@ __pycache__/
 # Environment Variables
 .env
 .env.local
+.env.backup
 
 # macOS System Files
 .DS_Store
@@ -43,3 +44,4 @@ data/chat_logs/2025-09-25.md
 # node
 node_modules/
 nul
+

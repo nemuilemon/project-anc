@@ -1,7 +1,7 @@
 # CLAUDE.md - AI Assistant Guide for Project A.N.C.
 
-**Version:** 3.1.1
-**Last Updated:** 2025-10-13
+**Version:** 3.3.0
+**Last Updated:** 2025-11-04
 **Purpose:** Guide for AI assistants working on Project A.N.C.
 
 ## Project Overview
@@ -17,8 +17,8 @@ Project A.N.C. (Alice Nexus Core) is a modern AI-powered desktop application bui
 ### Key Statistics
 - **Language:** Python 3.12+
 - **Framework:** Flet 0.28+
-- **Architecture:** v3.1.1 (Modern architecture with state management)
-- **Code Quality:** 40% reduction from v2.0, ~1,800 lines of quality code
+- **Architecture:** v3.3.0 (Modern architecture with state management)
+- **Code Quality:** ~1,300 lines of quality code (500 lines removed in v3.3.0)
 - **Plugins:** 3 auto-discovered (tagging, summarization, sentiment_compass)
 
 ## Architecture Principles
@@ -67,7 +67,7 @@ project-anc/
 │   ├── plugin_manager.py            # ⭐ Dynamic plugin discovery (302 lines)
 │   ├── ui_components.py             # ⭐ Reusable UI library (542 lines)
 │   ├── ui_redesign.py               # Main chat interface
-│   ├── sidebar_tabs.py              # Sidebar tabs (6 tabs)
+│   ├── sidebar_tabs.py              # Sidebar tabs (4 tabs: 分析、記憶、日報、設定)
 │   ├── alice_chat_manager.py        # Gemini/OpenAI integration
 │   ├── async_operations.py          # Async task management
 │   ├── logic.py                     # Business logic layer
@@ -486,7 +486,15 @@ python-dotenv>=1.0.0        # Environment variables
 
 ## Version History & Migration
 
-### v3.1.1 (Current) - Tag Editing & Configuration Enhancement
+### v3.3.0 (Current) - Settings UI Fix & Code Cleanup
+- **Fixed**: Settings UI now preserves all .env variables when saving
+- **Removed**: File and Editor tabs from Auxiliary Tools (500 lines removed)
+- **Improved**: .env file updating with backup and rollback functionality
+- Auxiliary Tools now has 4 tabs: Analysis, Memory, Nippo, Settings
+- **Breaking change**: Removed file browsing and editing features from UI
+- **Non-breaking** for core functionality (Alice chat, memory, nippo, analysis)
+
+### v3.1.1 - Tag Editing & Configuration Enhancement
 - Tag editing UI with full CRUD operations
 - Text input fields for settings (replaced sliders)
 - Complete .env file migration for all settings
@@ -525,7 +533,7 @@ app_state.add_file(path, metadata)
 
 - **Startup time**: ~2-3 seconds
 - **Plugin discovery**: <100ms (3 plugins)
-- **Memory usage**: ~150MB typical
+- **Memory usage**: ~150MB typical (reduced from ~200MB in v3.1.1)
 - **Async operations**: Use for files >1MB or analysis >1s
 - **Database**: TinyDB is fast for <10,000 records
 
@@ -623,6 +631,6 @@ pytest -v
 
 ---
 
-**Last Updated:** 2025-10-13
-**Project Version:** v3.1.1
+**Last Updated:** 2025-11-04
+**Project Version:** v3.3.0
 **For Questions:** See `docs/TROUBLESHOOTING.md` or create GitHub issue

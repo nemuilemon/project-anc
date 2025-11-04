@@ -10,7 +10,7 @@ import datetime
 from alice_chat_manager import AliceChatManager
 from memory_creation_manager import MemoryCreationManager
 from nippo_creation_manager import NippoCreationManager
-from sidebar_tabs import FileTab, EditorArea, AutomationAnalysisTab, SettingsTab, MemoryCreationTab, NippoCreationTab
+from sidebar_tabs import AutomationAnalysisTab, SettingsTab, MemoryCreationTab, NippoCreationTab
 
 
 class MainConversationArea(ft.Container):
@@ -696,27 +696,14 @@ class AuxiliaryToolsSidebar(ft.Container):
         - 設定タブ: アプリケーション設定
     """
 
-    def __init__(self, on_file_operations=None, on_save_file=None, available_ai_functions=None, on_run_analysis=None, memory_creation_manager=None, memories_dir=None, nippo_creation_manager=None, nippo_dir=None, on_settings_changed=None, **kwargs):
+    def __init__(self, available_ai_functions=None, on_run_analysis=None, memory_creation_manager=None, memories_dir=None, nippo_creation_manager=None, nippo_dir=None, on_settings_changed=None, **kwargs):
         super().__init__(**kwargs)
 
         # コールバック関数
-        self.on_file_operations = on_file_operations or {}
-        self.on_save_file = on_save_file
         self.on_run_analysis = on_run_analysis
         self.on_settings_changed = on_settings_changed
 
         # 各タブコンポーネントを作成
-        self.file_tab = FileTab(
-            on_file_select=self._on_file_select,
-            on_file_create=on_file_operations.get('create'),
-            on_file_delete=on_file_operations.get('delete'),
-            on_file_rename=on_file_operations.get('rename')
-        )
-
-        self.editor_area = EditorArea(
-            on_save_file=on_save_file
-        )
-
         self.analysis_tab = AutomationAnalysisTab(
             available_functions=available_ai_functions,
             on_run_analysis=on_run_analysis
@@ -735,22 +722,12 @@ class AuxiliaryToolsSidebar(ft.Container):
             memories_dir=memories_dir
         )
 
-        # タブ構成（標準のTabsに戻す）
+        # タブ構成（ファイルとエディタタブを削除）
         self.tabs = ft.Tabs(
             selected_index=0,
             animation_duration=200,
             expand=True,
             tabs=[
-                ft.Tab(
-                    text="ファイル",
-                    icon=ft.Icons.FOLDER,
-                    content=self.file_tab
-                ),
-                ft.Tab(
-                    text="エディタ",
-                    icon=ft.Icons.EDIT,
-                    content=self.editor_area
-                ),
                 ft.Tab(
                     text="分析",
                     icon=ft.Icons.ANALYTICS,
@@ -796,23 +773,6 @@ class AuxiliaryToolsSidebar(ft.Container):
         self.border_radius = 10
         self.margin = ft.margin.all(5)
 
-    def _on_file_select(self, file_info):
-        """ファイルが選択された時にエディタで開く"""
-        # ファイル内容を読み込む（実際の処理は親から提供される）
-        if self.on_file_operations.get('read'):
-            content = self.on_file_operations['read'](file_info)
-            self.editor_area.open_file(file_info, content)
-        else:
-            # デフォルトで空の内容でファイルを開く
-            self.editor_area.open_file(file_info, "")
-
-        # エディタタブに自動切り替え
-        self.tabs.selected_index = 1
-        self.tabs.update()
-
-    def load_files(self, file_list):
-        """ファイルリストを更新"""
-        self.file_tab.load_files(file_list)
 
     def show_analysis_result(self, result):
         """分析結果を表示"""
@@ -828,9 +788,9 @@ class ConversationFirstUI(ft.Row):
     """
 
     def __init__(self, page: ft.Page, on_send_message=None, alice_chat_manager=None,
-                 on_file_operations=None, on_save_file=None, available_ai_functions=None,
-                 on_run_analysis=None, memory_creation_manager=None, memories_dir=None,
-                 nippo_creation_manager=None, nippo_dir=None, app_state=None, on_settings_changed=None, **kwargs):
+                 available_ai_functions=None, on_run_analysis=None, memory_creation_manager=None,
+                 memories_dir=None, nippo_creation_manager=None, nippo_dir=None, app_state=None,
+                 on_settings_changed=None, **kwargs):
         super().__init__(**kwargs)
 
         self.page = page
@@ -844,8 +804,6 @@ class ConversationFirstUI(ft.Row):
 
         # 補助ツール・サイドバー
         self.sidebar = AuxiliaryToolsSidebar(
-            on_file_operations=on_file_operations,
-            on_save_file=on_save_file,
             available_ai_functions=available_ai_functions,
             on_run_analysis=on_run_analysis,
             memory_creation_manager=memory_creation_manager,
@@ -884,7 +842,7 @@ class RedesignedAppUI:
     新しいカンバセーション・ファーストUIを提供する。
     """
 
-    def __init__(self, page: ft.Page, on_open_file, on_save_file, on_analyze_tags,
+    def __init__(self, page: ft.Page, on_open_file, on_analyze_tags,
                  on_refresh_files, on_update_tags, on_cancel_tags, on_rename_file,
                  on_close_tab, on_create_file, on_archive_file, on_delete_file,
                  on_run_ai_analysis=None, on_run_automation=None, on_cancel_automation=None,
@@ -899,7 +857,6 @@ class RedesignedAppUI:
         # 既存のコールバック関数を保存
         self.callbacks = {
             'on_open_file': on_open_file,
-            'on_save_file': on_save_file,
             'on_analyze_tags': on_analyze_tags,
             'on_refresh_files': on_refresh_files,
             'on_update_tags': on_update_tags,
@@ -951,22 +908,12 @@ class RedesignedAppUI:
                 print(f"Failed to initialize Nippo Creation Manager: {e}")
         print(f"[DIAGNOSTIC] NippoCreationManager instance: {self.nippo_creation_manager}")
 
-        # ファイル操作コールバックを整理
-        file_operations = {
-            'read': self._read_file,
-            'create': on_create_file,
-            'delete': on_delete_file,
-            'rename': on_rename_file
-        }
-
         # メインUIコンポーネントを作成
         print("[DIAGNOSTIC] Initializing ConversationFirstUI...")
         self.ui = ConversationFirstUI(
             page=page,
             on_send_message=self._handle_chat_message,
             alice_chat_manager=self.alice_chat_manager,
-            on_file_operations=file_operations,
-            on_save_file=on_save_file,
             available_ai_functions=available_ai_functions,
             on_run_analysis=self._handle_ai_analysis,
             memory_creation_manager=self.memory_creation_manager,
@@ -1084,29 +1031,6 @@ class RedesignedAppUI:
     def sidebar(self):
         return self.ui.sidebar
 
-    def auto_save_all_tabs(self):
-        """すべてのタブを自動保存（AppUIクラス互換性）"""
-        # サイドバーのエディタエリアの開いているタブを保存
-        for file_path, tab_info in self.ui.sidebar.editor_area.open_tabs.items():
-            if tab_info['modified']:
-                content = tab_info['editor'].value
-                if self.callbacks['on_save_file']:
-                    self.callbacks['on_save_file'](tab_info['info'], content)
-
-    def handle_keyboard_event(self, e):
-        """キーボードイベント処理（AppUIクラス互換性）"""
-        if e.key == "S" and e.ctrl:
-            # Ctrl+S でアクティブファイル保存
-            active_file = self.ui.sidebar.editor_area.active_file
-            if active_file and active_file in self.ui.sidebar.editor_area.open_tabs:
-                self.ui.sidebar.editor_area._save_file(active_file)
-                if hasattr(self, 'page'):
-                    self.page.show_snack_bar(
-                        ft.SnackBar(
-                            content=ft.Text("ファイルが保存されました"),
-                            bgcolor=ft.Colors.GREEN
-                        )
-                    )
 
     # AppBarは新しい設計では不要だが、互換性のために空のプロパティを提供
     @property

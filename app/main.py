@@ -131,7 +131,6 @@ def main(page: ft.Page):
         app_ui = RedesignedAppUI(
             page,
             on_open_file=handlers.handle_open_file,
-            on_save_file=handlers.handle_save_file,
             on_analyze_tags=handlers.handle_analyze_tags,
             on_refresh_files=handlers.handle_refresh_files,
             on_update_tags=handlers.handle_update_tags,
@@ -213,9 +212,6 @@ def main(page: ft.Page):
         async_manager.shutdown()
 
     page.on_window_event = lambda e: on_page_close(e) if e.data == "close" else None
-
-    # Register keyboard event handler for shortcuts like Ctrl+S
-    page.on_keyboard_event = app_ui.handle_keyboard_event
 
 # アプリケーションエントリーポイントのセーフラッパー
 def safe_main():
