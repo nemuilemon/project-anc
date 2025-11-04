@@ -11,9 +11,8 @@ from datetime import datetime
 from typing import List, Dict, Any, Optional
 from state_manager import app_state
 import requests
-# base64, mimetypes - コメントアウト（将来の画像対応用）
-# import base64
-# import mimetypes
+import base64
+import mimetypes
 
 class AliceChatManager:
     """Manages conversations with Alice using Chat API Client.
@@ -55,11 +54,25 @@ class AliceChatManager:
             timestamp = datetime.now().strftime("%Y-%m-%d-%H%M%S-%f")[:-3]  # milliseconds precision
             log_file_path = os.path.join(self.dialog_logs_dir, f"dialog-{timestamp}.json")
 
+            # Count messages with images
+            messages = request_data.get("messages", [])
+            image_count = sum(1 for msg in messages if msg.get("images"))
+            image_info = []
+            for msg in messages:
+                if msg.get("images"):
+                    for img in msg["images"]:
+                        image_info.append({
+                            "mime_type": img.get("mime_type"),
+                            "data_size": len(img.get("data", ""))
+                        })
+
             log_data = {
                 "timestamp": datetime.now().isoformat(),
                 "request": {
                     "config": request_data.get("config", {}),
-                    "message_count": len(request_data.get("messages", []))
+                    "message_count": len(messages),
+                    "image_count": image_count,
+                    "images": image_info if image_info else None
                 },
                 "response": api_response if not error else None,
                 "error": error
@@ -116,24 +129,53 @@ class AliceChatManager:
         messages = []
 
         for msg in history:
-            # === [IMAGE COMMIT OFF BLOCK] ===
+            # Check if message has image
             if msg.get('metadata') and msg['metadata'].get('image_path'):
-                print(f"DEBUG: Image path found, but API does not support sending. Ignoring.")
-                # 将来の画像エンコードロジック:
-                # import base64
-                # with open(msg['metadata']['image_path'], 'rb') as f:
-                #     image_data = base64.b64encode(f.read()).decode('utf-8')
-                # messages.append({
-                #     "role": msg['role'],
-                #     "content": msg['content'],
-                #     "image": image_data
-                # })
-            # === [END IMAGE COMMIT OFF BLOCK] ===
+                image_path = msg['metadata']['image_path']
 
-            messages.append({
-                "role": msg['role'],
-                "content": msg['content']  # テキストのみ送信
-            })
+                try:
+                    # Read and encode image
+                    with open(image_path, 'rb') as f:
+                        image_data = base64.b64encode(f.read()).decode('utf-8')
+
+                    # Determine MIME type
+                    mime_type, _ = mimetypes.guess_type(image_path)
+                    if mime_type is None or not mime_type.startswith('image/'):
+                        mime_type = "image/jpeg"  # Default fallback
+
+                    # Build ChatMessage with images (Compass API v1.3.0 format)
+                    messages.append({
+                        "role": msg['role'],
+                        "content": msg['content'],
+                        "images": [
+                            {
+                                "mime_type": mime_type,
+                                "data": image_data
+                            }
+                        ]
+                    })
+                    print(f"DEBUG: Image encoded successfully - {mime_type}, size: {len(image_data)} chars")
+
+                except FileNotFoundError:
+                    print(f"WARNING: Image file not found: {image_path}. Sending text only.")
+                    # Send message without image if file not found
+                    messages.append({
+                        "role": msg['role'],
+                        "content": msg['content']
+                    })
+                except Exception as e:
+                    print(f"ERROR: Failed to encode image {image_path}: {e}. Sending text only.")
+                    # Send message without image if encoding fails
+                    messages.append({
+                        "role": msg['role'],
+                        "content": msg['content']
+                    })
+            else:
+                # No image, send text only
+                messages.append({
+                    "role": msg['role'],
+                    "content": msg['content']
+                })
 
         return messages
 
@@ -206,16 +248,13 @@ class AliceChatManager:
 
         Args:
             user_message (str): The user's message
-            image_path (Optional[str]): Path to the image (currently not supported)
+            image_path (Optional[str]): Path to the image file (supports Compass API v1.3.0 multimodal)
 
         Returns:
             str: Alice's response message
         """
-        # === [IMAGE COMMIT OFF BLOCK] ===
         if image_path:
-            print(f"WARNING: API移行に伴い画像送信は一時的に無効化されています。")
-            # メッセージは続行する
-        # === [END IMAGE COMMIT OFF BLOCK] ===
+            print(f"INFO: 画像を含むメッセージを送信します。")
 
         if not user_message.strip() and not image_path:
             return "メッセージを送信してください。"
