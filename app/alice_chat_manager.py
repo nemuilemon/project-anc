@@ -119,8 +119,12 @@ class AliceChatManager:
         except Exception as e:
             print(f"Failed to save conversation to chat log: {e}")
 
-    def _convert_to_chat_messages(self) -> List[Dict[str, Any]]:
+    def _convert_to_chat_messages(self, new_message_index: Optional[int] = None) -> List[Dict[str, Any]]:
         """Convert conversation history to ChatMessage format for API.
+
+        Args:
+            new_message_index: Index of the new message (only this message's image will be included).
+                             If None, no images will be included (backward compatibility).
 
         Returns:
             List[Dict[str, Any]]: List of messages in ChatMessage format
@@ -128,9 +132,16 @@ class AliceChatManager:
         history = app_state.get_conversation_messages()
         messages = []
 
-        for msg in history:
-            # Check if message has image
-            if msg.get('metadata') and msg['metadata'].get('image_path'):
+        for idx, msg in enumerate(history):
+            # Only include image data for the NEW message (not historical messages)
+            should_include_image = (
+                new_message_index is not None and
+                idx == new_message_index and
+                msg.get('metadata') and
+                msg['metadata'].get('image_path')
+            )
+
+            if should_include_image:
                 image_path = msg['metadata']['image_path']
 
                 try:
@@ -154,7 +165,7 @@ class AliceChatManager:
                             }
                         ]
                     })
-                    print(f"DEBUG: Image encoded successfully - {mime_type}, size: {len(image_data)} chars")
+                    print(f"DEBUG: Image encoded for NEW message - {mime_type}, size: {len(image_data)} chars")
 
                 except FileNotFoundError:
                     print(f"WARNING: Image file not found: {image_path}. Sending text only.")
@@ -171,7 +182,7 @@ class AliceChatManager:
                         "content": msg['content']
                     })
             else:
-                # No image, send text only
+                # Text-only message (even if it originally had an image in history)
                 messages.append({
                     "role": msg['role'],
                     "content": msg['content']
@@ -267,8 +278,12 @@ class AliceChatManager:
                 metadata={'image_path': image_path} if image_path else None
             )
 
-            # 2. APIリクエスト構築
-            messages = self._convert_to_chat_messages()
+            # 2. APIリクエスト構築 - 新しいメッセージのインデックスを取得
+            history = app_state.get_conversation_messages()
+            new_message_index = len(history) - 1  # 最後のメッセージが新しいメッセージ
+
+            # 画像は新しいメッセージのみに含める（履歴の画像は送信しない）
+            messages = self._convert_to_chat_messages(new_message_index)
             config = self._build_chat_config()
             request_data = {"messages": messages, "config": config}
 
